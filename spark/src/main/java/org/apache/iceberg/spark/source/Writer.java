@@ -81,7 +81,7 @@ import static org.apache.iceberg.TableProperties.WRITE_TARGET_FILE_SIZE_BYTES;
 import static org.apache.iceberg.TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT;
 
 // TODO: parameterize DataSourceWriter with subclass of WriterCommitMessage
-class Writer implements DataSourceWriter {
+public class Writer implements DataSourceWriter {
   private static final Logger LOG = LoggerFactory.getLogger(Writer.class);
 
   private final Table table;
@@ -94,8 +94,8 @@ class Writer implements DataSourceWriter {
   private final long targetFileSize;
   private final Schema dsSchema;
 
-  Writer(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
-         DataSourceOptions options, boolean replacePartitions, String applicationId, Schema dsSchema) {
+  public Writer(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
+                DataSourceOptions options, boolean replacePartitions, String applicationId, Schema dsSchema) {
     this(table, io, encryptionManager, options, replacePartitions, applicationId, null, dsSchema);
   }
 
@@ -163,7 +163,7 @@ class Writer implements DataSourceWriter {
     LOG.info("Committed in {} ms", duration);
   }
 
-  private void append(WriterCommitMessage[] messages) {
+  protected void append(WriterCommitMessage[] messages) {
     AppendFiles append = table.newAppend();
 
     int numFiles = 0;
@@ -175,7 +175,7 @@ class Writer implements DataSourceWriter {
     commitOperation(append, numFiles, "append");
   }
 
-  private void replacePartitions(WriterCommitMessage[] messages) {
+  protected void replacePartitions(WriterCommitMessage[] messages) {
     ReplacePartitions dynamicOverwrite = table.newReplacePartitions();
 
     int numFiles = 0;
