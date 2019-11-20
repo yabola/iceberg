@@ -19,6 +19,7 @@
 
 package org.apache.iceberg.spark.source;
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,8 @@ import org.apache.iceberg.hive.HiveCatalog;
 import org.apache.iceberg.hive.HiveCatalogs;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.spark.metrics.MeteredReader;
+import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
 import org.apache.iceberg.spark.source.CommitOperations.Append;
 import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
 import org.apache.iceberg.spark.source.CommitOperations.DynamicPartitionOverwrite;
@@ -86,7 +89,9 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     Broadcast<FileIO> io = lazySparkContext().broadcast(fileIO(table));
     Broadcast<EncryptionManager> encryptionManager = lazySparkContext().broadcast(table.encryption());
 
-    Reader reader = new Reader(table, io, encryptionManager, Boolean.parseBoolean(caseSensitive), options);
+    Reader reader = createMeteredReaderIfConfigured(
+        conf, table, io, encryptionManager, Boolean.parseBoolean(caseSensitive), options);
+
     if (readSchema != null) {
       // convert() will fail if readSchema contains fields not in table.schema()
       SparkSchemaUtil.convert(table.schema(), readSchema);
@@ -94,6 +99,19 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     }
 
     return reader;
+  }
+
+  private Reader createMeteredReaderIfConfigured(Configuration conf, Table table, Broadcast<FileIO> io,
+                                                 Broadcast<EncryptionManager> encryptionManager,
+                                                 boolean caseSensitive, DataSourceOptions options) {
+    Preconditions.checkArgument(conf != null, "Configuration is null");
+
+    if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
+      MetricRegistry metricRegistry = SparkMetricsUtil.metricRegistry();
+      return new MeteredReader(metricRegistry, table, io, encryptionManager, caseSensitive, options);
+    } else {
+      return new Reader(table, io, encryptionManager, caseSensitive, options);
+    }
   }
 
   @Override
