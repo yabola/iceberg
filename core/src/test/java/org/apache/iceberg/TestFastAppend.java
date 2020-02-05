@@ -217,6 +217,11 @@ public class TestFastAppend extends TableTestBase {
 
   @Test
   public void testAppendManifestCleanup() throws IOException {
+    // the test assumes the manifests are rewritten
+    table.updateProperties()
+        .set(TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false")
+        .commit();
+
     // inject 5 failures
     TestTables.TestTableOperations ops = table.ops();
     ops.failCommits(5);
