@@ -19,6 +19,7 @@
 
 package org.apache.iceberg.spark.source;
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,11 @@ import org.apache.iceberg.hive.HiveCatalog;
 import org.apache.iceberg.hive.HiveCatalogs;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.spark.metrics.MeteredReader;
+import org.apache.iceberg.spark.metrics.SparkMetricsUtil;
+import org.apache.iceberg.spark.source.CommitOperations.Append;
+import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
+import org.apache.iceberg.spark.source.CommitOperations.DynamicPartitionOverwrite;
 import org.apache.iceberg.transforms.Transform;
 import org.apache.iceberg.transforms.UnknownTransform;
 import org.apache.iceberg.types.CheckCompatibility;
@@ -83,7 +89,9 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     Broadcast<FileIO> io = lazySparkContext().broadcast(fileIO(table));
     Broadcast<EncryptionManager> encryptionManager = lazySparkContext().broadcast(table.encryption());
 
-    Reader reader = new Reader(table, io, encryptionManager, Boolean.parseBoolean(caseSensitive), options);
+    Reader reader = createMeteredReaderIfConfigured(
+        conf, table, io, encryptionManager, Boolean.parseBoolean(caseSensitive), options);
+
     if (readSchema != null) {
       // convert() will fail if readSchema contains fields not in table.schema()
       SparkSchemaUtil.convert(table.schema(), readSchema);
@@ -91,6 +99,19 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     }
 
     return reader;
+  }
+
+  private Reader createMeteredReaderIfConfigured(Configuration conf, Table table, Broadcast<FileIO> io,
+                                                 Broadcast<EncryptionManager> encryptionManager,
+                                                 boolean caseSensitive, DataSourceOptions options) {
+    Preconditions.checkArgument(conf != null, "Configuration is null");
+
+    if (conf.getBoolean("iceberg.dropwizard.enable-metrics-collection", false)) {
+      MetricRegistry metricRegistry = SparkMetricsUtil.metricRegistry();
+      return new MeteredReader(metricRegistry, table, io, encryptionManager, caseSensitive, options);
+    } else {
+      return new Reader(table, io, encryptionManager, caseSensitive, options);
+    }
   }
 
   @Override
@@ -105,12 +126,12 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     validatePartitionTransforms(table.spec());
     String appId = lazySparkSession().sparkContext().applicationId();
     String wapId = lazySparkSession().conf().get("spark.wap.id", null);
-    boolean replacePartitions = mode == SaveMode.Overwrite;
+    CommitOperation commitOp = mode == SaveMode.Overwrite ? DynamicPartitionOverwrite.get() : Append.get();
 
     Broadcast<FileIO> io = lazySparkContext().broadcast(fileIO(table));
     Broadcast<EncryptionManager> encryptionManager = lazySparkContext().broadcast(table.encryption());
 
-    return Optional.of(new Writer(table, io, encryptionManager, options, replacePartitions, appId, wapId, dsSchema));
+    return Optional.of(new Writer(table, io, encryptionManager, options, commitOp, appId, wapId, dsSchema));
   }
 
   @Override
@@ -149,28 +170,28 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     }
   }
 
-  private SparkSession lazySparkSession() {
+  protected SparkSession lazySparkSession() {
     if (lazySpark == null) {
       this.lazySpark = SparkSession.builder().getOrCreate();
     }
     return lazySpark;
   }
 
-  private JavaSparkContext lazySparkContext() {
+  protected JavaSparkContext lazySparkContext() {
     if (lazySparkContext == null) {
       this.lazySparkContext = new JavaSparkContext(lazySparkSession().sparkContext());
     }
     return lazySparkContext;
   }
 
-  private Configuration lazyBaseConf() {
+  protected Configuration lazyBaseConf() {
     if (lazyConf == null) {
       this.lazyConf = lazySparkSession().sessionState().newHadoopConf();
     }
     return lazyConf;
   }
 
-  private Table getTableAndResolveHadoopConfiguration(
+  protected Table getTableAndResolveHadoopConfiguration(
       DataSourceOptions options, Configuration conf) {
     // Overwrite configurations from the Spark Context with configurations from the options.
     mergeIcebergHadoopConfs(conf, options.asMap());
@@ -182,14 +203,14 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     return table;
   }
 
-  private static void mergeIcebergHadoopConfs(
+  protected static void mergeIcebergHadoopConfs(
       Configuration baseConf, Map<String, String> options) {
     options.keySet().stream()
         .filter(key -> key.startsWith("hadoop."))
         .forEach(key -> baseConf.set(key.replaceFirst("hadoop.", ""), options.get(key)));
   }
 
-  private void validateWriteSchema(Schema tableSchema, Schema dsSchema, Boolean checkNullability) {
+  protected void validateWriteSchema(Schema tableSchema, Schema dsSchema, Boolean checkNullability) {
     List<String> errors;
     if (checkNullability) {
       errors = CheckCompatibility.writeCompatibilityErrors(tableSchema, dsSchema);
@@ -208,7 +229,7 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     }
   }
 
-  private void validatePartitionTransforms(PartitionSpec spec) {
+  protected void validatePartitionTransforms(PartitionSpec spec) {
     if (spec.fields().stream().anyMatch(field -> field.transform() instanceof UnknownTransform)) {
       String unsupported = spec.fields().stream()
           .map(PartitionField::transform)
@@ -221,14 +242,14 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     }
   }
 
-  private boolean checkNullability(DataSourceOptions options) {
+  protected boolean checkNullability(DataSourceOptions options) {
     boolean sparkCheckNullability = Boolean.parseBoolean(lazySpark.conf()
         .get("spark.sql.iceberg.check-nullability", "true"));
     boolean dataFrameCheckNullability = options.getBoolean("check-nullability", true);
     return sparkCheckNullability && dataFrameCheckNullability;
   }
 
-  private FileIO fileIO(Table table) {
+  protected FileIO fileIO(Table table) {
     if (table.io() instanceof HadoopFileIO) {
       // we need to use Spark's SerializableConfiguration to avoid issues with Kryo serialization
       SerializableConfiguration conf = new SerializableConfiguration(((HadoopFileIO) table.io()).conf());

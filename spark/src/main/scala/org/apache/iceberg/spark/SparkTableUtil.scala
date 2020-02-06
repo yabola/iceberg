@@ -34,11 +34,13 @@ import org.apache.iceberg.util.PropertyUtil
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.{DataFrame, Encoder, Encoders, SparkSession}
-import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.{CatalystTypeConverters, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTablePartition}
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.datasources.{FileStatusCache, InMemoryFileIndex}
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.util.Try
 
 object SparkTableUtil {
@@ -100,6 +102,37 @@ object SparkTableUtil {
     catalog
       .listPartitions(tableIdent)
       .map(catalogPartition => toSparkPartition(catalogPartition, catalogTable))
+  }
+
+
+  /**
+   * Returns all partitions in the table identified by the given root path.
+   *
+   * @param spark a Spark session
+   * @param rootPath a root path
+   * @param format a file format
+   * @return all table's partitions
+   */
+  def getPartitions(spark: SparkSession, rootPath: Path, format: String): Seq[SparkPartition] = {
+    val fileStatusCache = FileStatusCache.getOrCreate(spark)
+    val fileIndex = new InMemoryFileIndex(spark, Seq(rootPath), Map.empty, None, fileStatusCache)
+    val spec = fileIndex.partitionSpec
+    val schema = spec.partitionColumns
+
+    if (spec.partitions.isEmpty) {
+      return Seq(SparkPartition(Map.empty, rootPath.toString, format))
+    }
+
+    spec.partitions.map { p =>
+      val values = mutable.Map.empty[String, String]
+      schema.foreach { field =>
+        val fieldIndex = schema.fieldIndex(field.name)
+        val catalystValue = p.values.get(fieldIndex, field.dataType)
+        val value = CatalystTypeConverters.convertToScala(catalystValue, field.dataType)
+        values.update(field.name, value.toString)
+      }
+      SparkPartition(values.toMap, p.path.toString, format)
+    }
   }
 
   /**

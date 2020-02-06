@@ -37,6 +37,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileSystem;
@@ -102,7 +103,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 
-class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushDownRequiredColumns,
+public class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushDownRequiredColumns,
     SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(Reader.class);
 
@@ -115,6 +116,7 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
   private final Long splitSize;
   private final Integer splitLookback;
   private final Long splitOpenFileCost;
+  private final boolean includeFileName;
   private final Broadcast<FileIO> io;
   private final Broadcast<EncryptionManager> encryptionManager;
   private final boolean caseSensitive;
@@ -128,8 +130,8 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
   private StructType type = null; // cached because Spark accesses it multiple times
   private List<CombinedScanTask> tasks = null; // lazy cache of tasks
 
-  Reader(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
-         boolean caseSensitive, DataSourceOptions options) {
+  public Reader(Table table, Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
+                boolean caseSensitive, DataSourceOptions options) {
     this.table = table;
     this.snapshotId = options.get("snapshot-id").map(Long::parseLong).orElse(null);
     this.asOfTimestamp = options.get("as-of-timestamp").map(Long::parseLong).orElse(null);
@@ -142,6 +144,7 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
     this.splitSize = options.get("split-size").map(Long::parseLong).orElse(null);
     this.splitLookback = options.get("lookback").map(Integer::parseInt).orElse(null);
     this.splitOpenFileCost = options.get("file-open-cost").map(Long::parseLong).orElse(null);
+    this.includeFileName = options.get("include-file-name").map(Boolean::parseBoolean).orElse(false);
 
     if (io.getValue() instanceof HadoopFileIO) {
       String scheme = "no_exist";
@@ -158,7 +161,6 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
       this.localityPreferred = false;
     }
 
-    this.schema = table.schema();
     this.io = io;
     this.encryptionManager = encryptionManager;
     this.caseSensitive = caseSensitive;
@@ -170,6 +172,11 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
         this.schema = SparkSchemaUtil.prune(table.schema(), requestedSchema);
       } else {
         this.schema = table.schema();
+      }
+      if (includeFileName) {
+        List<Types.NestedField> columns = Lists.newArrayList(schema.columns());
+        columns.add(Types.NestedField.required(Integer.MAX_VALUE, "_input_file_name_", Types.StringType.get()));
+        schema = new Schema(columns);
       }
     }
     return schema;
@@ -210,10 +217,13 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
     List<Filter> pushed = Lists.newArrayListWithExpectedSize(filters.length);
 
     for (Filter filter : filters) {
-      Expression expr = SparkFilters.convert(filter);
-      if (expr != null) {
-        expressions.add(expr);
-        pushed.add(filter);
+      // we cannot push down filters on `_input_file_name_`
+      if (!ArrayUtils.contains(filter.references(), "_input_file_name_")) {
+        Expression expr = SparkFilters.convert(filter);
+        if (expr != null) {
+          expressions.add(expr);
+          pushed.add(filter);
+        }
       }
     }
 
@@ -308,7 +318,7 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
         table, lazySchema().asStruct(), filterExpressions, caseSensitive);
   }
 
-  private static class ReadTask implements InputPartition<InternalRow>, Serializable {
+  public static class ReadTask implements InputPartition<InternalRow>, Serializable {
     private final CombinedScanTask task;
     private final String tableSchemaString;
     private final String expectedSchemaString;
@@ -321,9 +331,9 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
     private transient Schema expectedSchema = null;
     private transient String[] preferredLocations;
 
-    private ReadTask(CombinedScanTask task, String tableSchemaString, String expectedSchemaString,
-                     Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
-                     boolean caseSensitive, boolean localityPreferred) {
+    public ReadTask(CombinedScanTask task, String tableSchemaString, String expectedSchemaString,
+                    Broadcast<FileIO> io, Broadcast<EncryptionManager> encryptionManager,
+                    boolean caseSensitive, boolean localityPreferred) {
       this.task = task;
       this.tableSchemaString = tableSchemaString;
       this.expectedSchemaString = expectedSchemaString;
@@ -491,6 +501,20 @@ class Reader implements DataSourceReader, SupportsPushDownFilters, SupportsPushD
         // return the base iterator
         iterSchema = finalSchema;
         iter = open(task, finalSchema);
+      }
+
+      Types.NestedField fileNameField = expectedSchema.findField("_input_file_name_");
+      if (fileNameField != null) {
+        List<Types.NestedField> finalColumns = Lists.newArrayList(iterSchema.columns());
+        finalColumns.add(fileNameField);
+        iterSchema = new Schema(finalColumns);
+
+        JoinedRow rowWithFileName = new JoinedRow();
+        GenericInternalRow fileName = new GenericInternalRow(1);
+        fileName.update(0, UTF8String.fromString(file.path().toString()));
+        rowWithFileName.withRight(fileName);
+
+        iter = Iterators.transform(iter, rowWithFileName::withLeft);
       }
 
       // TODO: remove the projection by reporting the iterator's schema back to Spark

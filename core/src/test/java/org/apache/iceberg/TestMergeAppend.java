@@ -163,6 +163,8 @@ public class TestMergeAppend extends TableTestBase {
     table.updateProperties().set(TableProperties.MANIFEST_MIN_MERGE_COUNT, "2")
         // each manifest file is 4554 bytes, so 10000 bytes limit will give us 2 bins with 3 manifest/data files.
         .set(TableProperties.MANIFEST_TARGET_SIZE_BYTES, "10000")
+        // the test assumes manifests are rewritten
+        .set(TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false")
         .commit();
 
     TableMetadata base = readMetadata();
@@ -474,6 +476,11 @@ public class TestMergeAppend extends TableTestBase {
 
   @Test
   public void testAppendManifestCleanup() throws IOException {
+    // the test assumes manifests are rewritten
+    table.updateProperties()
+        .set(TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false")
+        .commit();
+
     // inject 5 failures
     TestTables.TestTableOperations ops = table.ops();
     ops.failCommits(5);

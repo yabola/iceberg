@@ -17,35 +17,10 @@
  * under the License.
  */
 
-buildscript {
-  repositories {
-    maven { url "https://artifacts.apple.com/plugins-snapshot" }
-    maven { url "https://artifacts.apple.com/plugins-release" }
-  }
-  dependencies {
-    classpath "com.apple.cie.rio:gradle-build-plugin:+"
-  }
-}
+package org.apache.iceberg
 
-apply plugin: com.apple.cie.rio.group.RioGroupPlugin
+import org.apache.spark.sql.SparkSession
 
-subprojects {
-  apply plugin: 'maven'
-  apply plugin: 'maven-publish'
-  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
-
-  rio {
-    library {
-      isPublic = true
-    }
-  }
-
-  task testJar(type: Jar) {
-    archiveClassifier = 'tests'
-    from sourceSets.test.output
-  }
-
-  artifacts {
-    testArtifacts testJar
-  }
+private[iceberg] trait IcebergAction {
+  def execute(spark: SparkSession, table: Table)
 }

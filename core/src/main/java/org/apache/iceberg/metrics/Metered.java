@@ -17,35 +17,7 @@
  * under the License.
  */
 
-buildscript {
-  repositories {
-    maven { url "https://artifacts.apple.com/plugins-snapshot" }
-    maven { url "https://artifacts.apple.com/plugins-release" }
-  }
-  dependencies {
-    classpath "com.apple.cie.rio:gradle-build-plugin:+"
-  }
-}
+package org.apache.iceberg.metrics;
 
-apply plugin: com.apple.cie.rio.group.RioGroupPlugin
-
-subprojects {
-  apply plugin: 'maven'
-  apply plugin: 'maven-publish'
-  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
-
-  rio {
-    library {
-      isPublic = true
-    }
-  }
-
-  task testJar(type: Jar) {
-    archiveClassifier = 'tests'
-    from sourceSets.test.output
-  }
-
-  artifacts {
-    testArtifacts testJar
-  }
+public interface Metered {
 }

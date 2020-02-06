@@ -17,35 +17,28 @@
  * under the License.
  */
 
-buildscript {
-  repositories {
-    maven { url "https://artifacts.apple.com/plugins-snapshot" }
-    maven { url "https://artifacts.apple.com/plugins-release" }
-  }
-  dependencies {
-    classpath "com.apple.cie.rio:gradle-build-plugin:+"
+package org.apache.iceberg
+
+import org.apache.spark.sql.SparkSession
+
+class IcebergActions(spark: SparkSession, table: Table) {
+
+  def rewriteManifests[K](strategy: RewriteManifestStrategy[K])(implicit i: K => Ordered[K]): Unit = {
+    val action = RewriteManifestsAction[K](strategy)
+    action.execute(spark, table)
   }
 }
 
-apply plugin: com.apple.cie.rio.group.RioGroupPlugin
+object IcebergActions {
 
-subprojects {
-  apply plugin: 'maven'
-  apply plugin: 'maven-publish'
-  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
-
-  rio {
-    library {
-      isPublic = true
+  def forTable(table: Table): IcebergActions = {
+    val spark = SparkSession.getActiveSession.getOrElse {
+      throw new IllegalArgumentException("No active SparkSession")
     }
+    forTable(spark, table)
   }
 
-  task testJar(type: Jar) {
-    archiveClassifier = 'tests'
-    from sourceSets.test.output
-  }
-
-  artifacts {
-    testArtifacts testJar
+  def forTable(spark: SparkSession, table: Table): IcebergActions = {
+    new IcebergActions(spark, table)
   }
 }

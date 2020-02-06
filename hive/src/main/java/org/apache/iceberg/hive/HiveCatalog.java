@@ -31,12 +31,16 @@ import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.UnknownDBException;
 import org.apache.iceberg.BaseMetastoreCatalog;
+import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.exceptions.NotFoundException;
+import org.apache.iceberg.hadoop.HadoopInputFile;
+import org.apache.iceberg.metrics.CoreMetricsUtil;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -164,6 +168,18 @@ public class HiveCatalog extends BaseMetastoreCatalog implements Closeable {
   }
 
   @Override
+  public org.apache.iceberg.Table registerTable(TableIdentifier identifier, String metadataFileLocation) {
+    Preconditions.checkArgument(isValidIdentifier(identifier), "Invalid identifier: %s", identifier);
+
+    TableOperations ops = newTableOps(identifier);
+    HadoopInputFile metadataFile = HadoopInputFile.fromLocation(metadataFileLocation, conf);
+    TableMetadata metadata = TableMetadataParser.read(ops.io(), metadataFile);
+    ops.commit(null, metadata);
+
+    return new BaseTable(ops, identifier.toString());
+  }
+
+  @Override
   protected boolean isValidIdentifier(TableIdentifier tableIdentifier) {
     return tableIdentifier.namespace().levels().length == 1;
   }
@@ -172,7 +188,8 @@ public class HiveCatalog extends BaseMetastoreCatalog implements Closeable {
   public TableOperations newTableOps(TableIdentifier tableIdentifier) {
     String dbName = tableIdentifier.namespace().level(0);
     String tableName = tableIdentifier.name();
-    return new HiveTableOperations(conf, clients, dbName, tableName);
+    TableOperations tableOps = new HiveTableOperations(conf, clients, dbName, tableName);
+    return CoreMetricsUtil.wrapWithMeterIfConfigured(conf, "hive", tableOps);
   }
 
   @Override

@@ -17,35 +17,31 @@
  * under the License.
  */
 
-buildscript {
-  repositories {
-    maven { url "https://artifacts.apple.com/plugins-snapshot" }
-    maven { url "https://artifacts.apple.com/plugins-release" }
-  }
-  dependencies {
-    classpath "com.apple.cie.rio:gradle-build-plugin:+"
-  }
-}
+package org.apache.iceberg.spark.metrics;
 
-apply plugin: com.apple.cie.rio.group.RioGroupPlugin
+import com.codahale.metrics.MetricRegistry;
+import org.apache.iceberg.hive.metrics.HiveMetricsUtil;
+import org.apache.iceberg.metrics.CoreMetricsUtil;
+import org.apache.spark.metrics.source.Source;
 
-subprojects {
-  apply plugin: 'maven'
-  apply plugin: 'maven-publish'
-  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
+public class IcebergMetricSource implements Source {
 
-  rio {
-    library {
-      isPublic = true
-    }
+  private static final String sourceName = "iceberg";
+  private final MetricRegistry metricRegistry = new MetricRegistry();
+
+  public IcebergMetricSource() {
+    metricRegistry.register("core", CoreMetricsUtil.metricRegistry());
+    metricRegistry.register("hms", HiveMetricsUtil.metricRegistry());
+    metricRegistry.register("query", SparkMetricsUtil.metricRegistry());
   }
 
-  task testJar(type: Jar) {
-    archiveClassifier = 'tests'
-    from sourceSets.test.output
+  @Override
+  public String sourceName() {
+    return sourceName;
   }
 
-  artifacts {
-    testArtifacts testJar
+  @Override
+  public MetricRegistry metricRegistry() {
+    return metricRegistry;
   }
 }

@@ -17,35 +17,45 @@
  * under the License.
  */
 
-buildscript {
-  repositories {
-    maven { url "https://artifacts.apple.com/plugins-snapshot" }
-    maven { url "https://artifacts.apple.com/plugins-release" }
-  }
-  dependencies {
-    classpath "com.apple.cie.rio:gradle-build-plugin:+"
-  }
-}
+package org.apache.iceberg;
 
-apply plugin: com.apple.cie.rio.group.RioGroupPlugin
+import org.apache.iceberg.expressions.Expression;
+import org.apache.iceberg.expressions.Expressions;
 
-subprojects {
-  apply plugin: 'maven'
-  apply plugin: 'maven-publish'
-  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
+public class NoResidualFileScanTask implements FileScanTask {
+  private final FileScanTask task;
 
-  rio {
-    library {
-      isPublic = true
-    }
+  public NoResidualFileScanTask(FileScanTask task) {
+    this.task = task;
   }
 
-  task testJar(type: Jar) {
-    archiveClassifier = 'tests'
-    from sourceSets.test.output
+  @Override
+  public DataFile file() {
+    return task.file();
   }
 
-  artifacts {
-    testArtifacts testJar
+  @Override
+  public PartitionSpec spec() {
+    return task.spec();
+  }
+
+  @Override
+  public long start() {
+    return task.start();
+  }
+
+  @Override
+  public long length() {
+    return task.length();
+  }
+
+  @Override
+  public Expression residual() {
+    return Expressions.alwaysTrue();
+  }
+
+  @Override
+  public Iterable<FileScanTask> split(long splitSize) {
+    return task.split(splitSize);
   }
 }

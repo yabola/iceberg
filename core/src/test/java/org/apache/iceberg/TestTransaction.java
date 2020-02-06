@@ -467,9 +467,11 @@ public class TestTransaction extends TableTestBase {
   @Test
   public void testTransactionRetryAndAppendManifests() throws Exception {
     // use only one retry and aggressively merge manifests
+    // the test assumes manifests are rewritten
     table.updateProperties()
         .set(TableProperties.COMMIT_NUM_RETRIES, "1")
         .set(TableProperties.MANIFEST_MIN_MERGE_COUNT, "0")
+        .set(TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false")
         .commit();
 
     Assert.assertEquals("Table should be on version 1", 1, (int) version());
