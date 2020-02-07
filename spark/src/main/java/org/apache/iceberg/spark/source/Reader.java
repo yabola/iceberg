@@ -146,7 +146,8 @@ public class Reader implements DataSourceReader, SupportsPushDownFilters, Suppor
     this.splitOpenFileCost = options.get("file-open-cost").map(Long::parseLong).orElse(null);
     this.includeFileName = options.get("include-file-name").map(Boolean::parseBoolean).orElse(false);
 
-    if (io.getValue() instanceof HadoopFileIO) {
+    boolean localityOption = options.get("locality").map(Boolean::parseBoolean).orElse(false);
+    if (localityOption && io.getValue() instanceof HadoopFileIO) {
       String scheme = "no_exist";
       try {
         FileSystem fs = new Path(table.location()).getFileSystem(
@@ -155,8 +156,7 @@ public class Reader implements DataSourceReader, SupportsPushDownFilters, Suppor
       } catch (IOException ioe) {
         LOG.warn("Failed to get Hadoop Filesystem", ioe);
       }
-      this.localityPreferred = options.get("locality").map(Boolean::parseBoolean)
-          .orElse(LOCALITY_WHITELIST_FS.contains(scheme));
+      this.localityPreferred = LOCALITY_WHITELIST_FS.contains(scheme);
     } else {
       this.localityPreferred = false;
     }
