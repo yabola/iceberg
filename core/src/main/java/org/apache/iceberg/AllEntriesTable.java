@@ -33,11 +33,11 @@ import org.apache.iceberg.types.TypeUtil;
  * WARNING: this table exposes internal details, like files that have been deleted. For a table of the live data files,
  * use {@link DataFilesTable}.
  */
-public class ManifestEntriesTable extends BaseMetadataTable {
+public class AllEntriesTable extends BaseMetadataTable {
   private final TableOperations ops;
   private final Table table;
 
-  public ManifestEntriesTable(TableOperations ops, Table table) {
+  public AllEntriesTable(TableOperations ops, Table table) {
     this.ops = ops;
     this.table = table;
   }
@@ -49,12 +49,12 @@ public class ManifestEntriesTable extends BaseMetadataTable {
 
   @Override
   String metadataTableName() {
-    return "entries";
+    return "all_entries";
   }
 
   @Override
   public TableScan newScan() {
-    return new EntriesTableScan(ops, table, schema());
+    return new Scan(ops, table, schema());
   }
 
   @Override
@@ -73,14 +73,14 @@ public class ManifestEntriesTable extends BaseMetadataTable {
     return table.currentSnapshot().manifestListLocation();
   }
 
-  private static class EntriesTableScan extends BaseTableScan {
+  private static class Scan extends BaseTableScan {
     private static final long TARGET_SPLIT_SIZE = 32 * 1024 * 1024; // 32 MB
 
-    EntriesTableScan(TableOperations ops, Table table, Schema schema) {
+    Scan(TableOperations ops, Table table, Schema schema) {
       super(ops, table, schema);
     }
 
-    private EntriesTableScan(
+    private Scan(
         TableOperations ops, Table table, Long snapshotId, Schema schema, Expression rowFilter,
         boolean caseSensitive, boolean colStats, Collection<String> selectedColumns,
         ImmutableMap<String, String> options) {
@@ -92,7 +92,7 @@ public class ManifestEntriesTable extends BaseMetadataTable {
         TableOperations ops, Table table, Long snapshotId, Schema schema, Expression rowFilter,
         boolean caseSensitive, boolean colStats, Collection<String> selectedColumns,
         ImmutableMap<String, String> options) {
-      return new EntriesTableScan(
+      return new Scan(
           ops, table, snapshotId, schema, rowFilter, caseSensitive, colStats, selectedColumns, options);
     }
 
@@ -104,7 +104,7 @@ public class ManifestEntriesTable extends BaseMetadataTable {
     @Override
     protected CloseableIterable<FileScanTask> planFiles(
         TableOperations ops, Snapshot snapshot, Expression rowFilter, boolean caseSensitive, boolean colStats) {
-      CloseableIterable<ManifestFile> manifests = CloseableIterable.withNoopClose(snapshot.manifests());
+      CloseableIterable<ManifestFile> manifests = AllDataFilesTable.allManifestFiles(ops.current().snapshots());
       String schemaString = SchemaParser.toJson(schema());
       String specString = PartitionSpecParser.toJson(PartitionSpec.unpartitioned());
 
