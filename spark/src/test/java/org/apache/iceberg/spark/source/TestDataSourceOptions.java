@@ -46,6 +46,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import static org.apache.iceberg.types.Types.NestedField.optional;
+import static org.apache.spark.sql.functions.input_file_name;
 
 public class TestDataSourceOptions {
 
@@ -224,19 +225,17 @@ public class TestDataSourceOptions {
 
     List<String> expectedFiles = Lists.newArrayList();
     try (CloseableIterable<FileScanTask> tasks = table.newScan().planFiles()) {
-      tasks.forEach(task -> {
-        expectedFiles.add(task.file().path().toString());
-      });
+      tasks.forEach(task -> expectedFiles.add(task.file().path().toString()));
     }
 
-    Dataset<String> filesDf = spark.read().format("iceberg")
-        .option("include-file-name", "true")
+    Dataset<String> fileDF = spark.read()
+        .format("iceberg")
         .load(tableLocation)
-        .select("_input_file_name_")
+        .select(input_file_name())
         .dropDuplicates()
         .as(Encoders.STRING());
 
-    List<String> reportedFiles = filesDf.collectAsList();
+    List<String> reportedFiles = fileDF.collectAsList();
     Assert.assertEquals(1, reportedFiles.size());
     Assert.assertEquals(expectedFiles, reportedFiles);
   }
@@ -268,33 +267,18 @@ public class TestDataSourceOptions {
 
     List<String> expectedFiles = Lists.newArrayList();
     try (CloseableIterable<FileScanTask> tasks = table.newScan().planFiles()) {
-      tasks.forEach(task -> {
-        expectedFiles.add(task.file().path().toString());
-      });
+      tasks.forEach(task -> expectedFiles.add(task.file().path().toString()));
     }
 
-    Dataset<Row> rows = spark.read().format("iceberg")
-        .option("include-file-name", "true")
-        .load(tableLocation);
-
-    // validate that we can handle projections on _input_file_name_
-    Dataset<String> files = rows
-        .select("_input_file_name_")
-        .dropDuplicates()
-        .as(Encoders.STRING());
-
-    List<String> reportedFiles = files.collectAsList();
-    Assert.assertEquals(3, reportedFiles.size());
-    Assert.assertEquals(expectedFiles, reportedFiles);
-
-    // validate that we don't push down filters on _input_file_name_
-    files = rows
-        .select("_input_file_name_")
+    Dataset<String> fileDF = spark.read()
+        .format("iceberg")
+        .load(tableLocation)
+        .select(input_file_name().as("_input_file_name_"))
         .filter("_input_file_name_ != 'a'")
         .dropDuplicates()
         .as(Encoders.STRING());
 
-    reportedFiles = files.collectAsList();
+    List<String> reportedFiles = fileDF.collectAsList();
     Assert.assertEquals(3, reportedFiles.size());
     Assert.assertEquals(expectedFiles, reportedFiles);
   }
