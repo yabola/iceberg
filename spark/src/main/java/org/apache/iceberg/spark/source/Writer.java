@@ -50,8 +50,10 @@ import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.LocationProvider;
 import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.spark.data.SparkAvroWriter;
+import org.apache.iceberg.spark.data.SparkOrcWriter;
 import org.apache.iceberg.spark.data.SparkParquetWriters;
 import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
 import org.apache.iceberg.util.PropertyUtil;
@@ -282,6 +284,14 @@ public class Writer implements DataSourceWriter {
                   .overwrite()
                   .build();
 
+            case ORC:
+              return ORC.write(file)
+                  .createWriterFunc(SparkOrcWriter::new)
+                  .setAll(properties)
+                  .schema(dsSchema)
+                  .overwrite()
+                  .build();
+
             default:
               throw new UnsupportedOperationException("Cannot write unknown format: " + fileFormat);
           }
@@ -362,7 +372,9 @@ public class Writer implements DataSourceWriter {
     public abstract void write(InternalRow row) throws IOException;
 
     public void writeInternal(InternalRow row)  throws IOException {
-      if (currentRows % ROWS_DIVISOR == 0 && currentAppender.length() >= targetFileSize) {
+      //TODO: ORC file now not support target file size before closed
+      if  (!format.equals(FileFormat.ORC) &&
+          currentRows % ROWS_DIVISOR == 0 && currentAppender.length() >= targetFileSize) {
         closeCurrent();
         openCurrent();
       }
