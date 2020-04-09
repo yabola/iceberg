@@ -326,7 +326,7 @@ project(':iceberg-spark') {
       }
     }
   }
-  
+
   dependencies {
     compile project(':iceberg-api')
     compile project(':iceberg-common')
@@ -341,6 +341,7 @@ project(':iceberg-spark') {
       exclude group: 'org.apache.avro', module: 'avro'
     }
 
+    testCompile project(':iceberg-data')
     testCompile "org.scalatest:scalatest_2.11"
     testCompile "org.apache.hadoop:hadoop-hdfs::tests"
     testCompile "org.apache.hadoop:hadoop-common::tests"
