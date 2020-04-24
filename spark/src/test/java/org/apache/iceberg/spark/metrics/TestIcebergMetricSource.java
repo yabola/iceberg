@@ -57,7 +57,7 @@ public class TestIcebergMetricSource {
 
     Assert.assertNull("MockSink should be null. MetricsSystem is not initialized yet.", MockSink.instance);
     metricsSystem = MetricsSystem.createMetricsSystem("default", conf, securityManager);
-    metricsSystem.start();
+    metricsSystem.start(true);
     Assert.assertNotNull("MockSink should not be null. MetricsSystem is initialized.", MockSink.instance);
 
     List<Source> sources = JavaConverters
@@ -103,28 +103,24 @@ public class TestIcebergMetricSource {
   }
 
   @Test
-  public void negativeTestToCheckIfChildRegistriesAreTrackedByParent() {
+  public void testChildRegistriesAreTrackedByParent() {
     String newKey = "some.metric.key";
 
     //Create a new timer
     CoreMetricsUtil.timer(HADOOP_METRIC_PREFIX, newKey);
 
-    //The new timer should not be available in Spark's metrics source.
+    //The new timer should be available in Spark's metrics source.
     try {
-      findTimer(icebergMetricSource.metricRegistry(),
-          MetricRegistry.name(HADOOP_METRIC_PREFIX, newKey));
-      fail("Indicates that child registries are tracked by parent. We should remove static calls in Metered classes");
+      findTimer(icebergMetricSource.metricRegistry(), MetricRegistry.name(HADOOP_METRIC_PREFIX, newKey));
     } catch (NoSuchElementException e) {
-      // Expected in the case until dropwizard metrics are upgraded beyond 4.1.1
+      fail("Child registries must be tracked by parent");
     }
 
-    //The new timer should not be available in Spark's metrics sink (obviously).
+    //The new timer should be available in Spark's metrics sink (obviously).
     try {
-      findTimer(mockSink.metricRegistry,
-          MetricRegistry.name(HADOOP_METRIC_PREFIX, newKey));
-      fail("Indicates that child registries are tracked by parent. We should remove static calls in Metered classes");
+      findTimer(mockSink.metricRegistry, MetricRegistry.name(HADOOP_METRIC_PREFIX, newKey));
     } catch (NoSuchElementException e) {
-      // Expected in the case until dropwizard metrics are upgraded beyond 4.1.1
+      fail("Child registries must be tracked by parent");
     }
   }
 

@@ -37,13 +37,6 @@ public class MeteredTableOperations implements TableOperations, Metered {
   public static final String TABLE_REFRESH_TIME = "table.refresh.time";
   public static final String TABLE_COMMIT_TIME = "table.commit.time";
 
-  public static void preRegisterMetrics() {
-    for (TableOperationsMetricType type : TableOperationsMetricType.values()) {
-      CoreMetricsUtil.timer(type.prefix(), TABLE_REFRESH_TIME);
-      CoreMetricsUtil.timer(type.prefix(), TABLE_COMMIT_TIME);
-    }
-  }
-
   public MeteredTableOperations(MetricRegistry metricRegistry, TableOperationsMetricType type,
       TableOperations delegate) {
     this.type = type;

@@ -247,6 +247,7 @@ project(':iceberg-mr') {
     testCompile project(path: ':iceberg-data', configuration: 'testArtifacts')
     testCompile project(path: ':iceberg-api', configuration: 'testArtifacts')
     testCompile project(path: ':iceberg-core', configuration: 'testArtifacts')
+    testCompile "io.dropwizard.metrics:metrics-core"
   }
 }
 
