@@ -358,6 +358,10 @@ project(':iceberg-spark') {
       exclude group: 'org.apache.avro', module: 'avro'
     }
   }
+
+  test {
+    maxHeapSize '1500m'
+  }
 }
 
 project(':iceberg-pig') {
