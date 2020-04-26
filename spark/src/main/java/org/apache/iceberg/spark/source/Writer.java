@@ -50,8 +50,10 @@ import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.LocationProvider;
 import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.spark.data.SparkAvroWriter;
+import org.apache.iceberg.spark.data.SparkOrcWriter;
 import org.apache.iceberg.spark.data.SparkParquetWriters;
 import org.apache.iceberg.spark.source.CommitOperations.CommitOperation;
 import org.apache.iceberg.util.PropertyUtil;
@@ -282,6 +284,14 @@ public class Writer implements DataSourceWriter {
                   .overwrite()
                   .build();
 
+            case ORC:
+              return ORC.write(file)
+                  .createWriterFunc(SparkOrcWriter::new)
+                  .setAll(properties)
+                  .schema(dsSchema)
+                  .overwrite()
+                  .build();
+
             default:
               throw new UnsupportedOperationException("Cannot write unknown format: " + fileFormat);
           }
@@ -294,7 +304,6 @@ public class Writer implements DataSourceWriter {
     private class OutputFileFactory {
       private final int partitionId;
       private final long taskId;
-      private final long epochId;
       // The purpose of this uuid is to be able to know from two paths that they were written by the same operation.
       // That's useful, for example, if a Spark job dies and leaves files in the file system, you can identify them all
       // with a recursive listing and grep.
@@ -304,7 +313,6 @@ public class Writer implements DataSourceWriter {
       OutputFileFactory(int partitionId, long taskId, long epochId) {
         this.partitionId = partitionId;
         this.taskId = taskId;
-        this.epochId = epochId;
         this.fileCount = 0;
       }
 
@@ -364,7 +372,9 @@ public class Writer implements DataSourceWriter {
     public abstract void write(InternalRow row) throws IOException;
 
     public void writeInternal(InternalRow row)  throws IOException {
-      if (currentRows % ROWS_DIVISOR == 0 && currentAppender.length() >= targetFileSize) {
+      //TODO: ORC file now not support target file size before closed
+      if  (!format.equals(FileFormat.ORC) &&
+          currentRows % ROWS_DIVISOR == 0 && currentAppender.length() >= targetFileSize) {
         closeCurrent();
         openCurrent();
       }
@@ -408,6 +418,7 @@ public class Writer implements DataSourceWriter {
         currentAppender.close();
         // metrics are only valid after the appender is closed
         Metrics metrics = currentAppender.metrics();
+        long fileSizeInBytes = currentAppender.length();
         List<Long> splitOffsets = currentAppender.splitOffsets();
         this.currentAppender = null;
 
@@ -415,7 +426,9 @@ public class Writer implements DataSourceWriter {
           fileIo.deleteFile(currentFile.encryptingOutputFile());
         } else {
           DataFile dataFile = DataFiles.builder(spec)
-              .withEncryptedOutputFile(currentFile)
+              .withEncryptionKeyMetadata(currentFile.keyMetadata())
+              .withPath(currentFile.encryptingOutputFile().location())
+              .withFileSizeInBytes(fileSizeInBytes)
               .withPartition(spec.fields().size() == 0 ? null : currentKey) // set null if unpartitioned
               .withMetrics(metrics)
               .withSplitOffsets(splitOffsets)

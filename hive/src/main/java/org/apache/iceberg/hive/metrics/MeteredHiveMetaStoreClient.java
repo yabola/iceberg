@@ -35,11 +35,6 @@ public class MeteredHiveMetaStoreClient extends HiveMetaStoreClient {
   private static final String HIVE_LOCK_TIME = "hive.table.lock.time";
   private static final String HIVE_UNLOCK_TIME = "hive.table.unlock.time";
 
-  protected static void preRegisterMetrics() {
-    HiveMetricsUtil.timer(HIVE_LOCK_TIME);
-    HiveMetricsUtil.timer(HIVE_UNLOCK_TIME);
-  }
-
   public MeteredHiveMetaStoreClient(MetricRegistry metricRegistry, HiveConf conf) throws MetaException {
     super(conf);
     this.metricRegistry = metricRegistry;

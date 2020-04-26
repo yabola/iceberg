@@ -36,10 +36,6 @@ public class MeteredReader extends Reader {
 
   private static final String QUERY_PLAN_TIME = "query.plan.time";
 
-  protected static void preRegisterMetrics() {
-    SparkMetricsUtil.timer(QUERY_PLAN_TIME);
-  }
-
   public MeteredReader(MetricRegistry metricRegistry, Table table, Broadcast<FileIO> fileIo,
                        Broadcast<EncryptionManager> encryptionManager, boolean caseSensitive,
                        DataSourceOptions options) {

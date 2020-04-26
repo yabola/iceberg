@@ -38,19 +38,6 @@ public class CoreMetricsUtil {
     return metricRegistry;
   }
 
-//  The top level parent metric registry (in the case of Spark,
-//  it will be org.apache.spark.metrics.MetricSystem.registry) will register all the available
-//  metrics at the time of registration. Any metrics those are added to the child MetricRegistry
-//  will not propagate to parent metric registry.
-//  This is a problem (https://github.com/dropwizard/metrics/issues/1214)
-//  and is solved in dropwizard metrics v4.1.1 (https://github.com/dropwizard/metrics/pull/1393)
-//  which provides child-aware MetricRegistry registration. Until this is used, we will
-//  have to prime the child metric registries with metrics before using them.
-
-  static {
-    MeteredTableOperations.preRegisterMetrics();
-  }
-
   public static Timer timer(String type, String metric) {
     return metricRegistry.timer(MetricRegistry.name(type, metric));
   }

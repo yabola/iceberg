@@ -26,8 +26,23 @@ import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.io.CloseableIterable;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class TestNoResidualFileScanTask extends TableTestBase {
+
+  @Parameterized.Parameters
+  public static Object[][] parameters() {
+    return new Object[][] {
+        new Object[] { 1 },
+        new Object[] { 2 },
+    };
+  }
+
+  public TestNoResidualFileScanTask(int formatVersion) {
+    super(formatVersion);
+  }
 
   private static final DataFile FILE = DataFiles.builder(SPEC)
       .withPath("/path/to/data-a.parquet")
