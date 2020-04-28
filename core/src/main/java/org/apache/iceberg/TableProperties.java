@@ -118,5 +118,5 @@ public class TableProperties {
   public static final long WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024; // 512 MB
 
   public static final String SNAPSHOT_ID_INHERITANCE_ENABLED = "compatibility.snapshot-id-inheritance.enabled";
-  public static final boolean SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = true;
+  public static final boolean SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = false;
 }
