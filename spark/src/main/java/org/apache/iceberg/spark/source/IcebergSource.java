@@ -126,7 +126,7 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
     validatePartitionTransforms(table.spec());
     String appId = lazySparkSession().sparkContext().applicationId();
     String wapId = lazySparkSession().conf().get("spark.wap.id", null);
-    CommitOperation commitOp = mode == SaveMode.Overwrite ? DynamicPartitionOverwrite.get() : Append.get();
+    CommitOperation<?> commitOp = mode == SaveMode.Overwrite ? DynamicPartitionOverwrite.get() : Append.get();
 
     Broadcast<FileIO> io = lazySparkContext().broadcast(fileIO(table));
     Broadcast<EncryptionManager> encryptionManager = lazySparkContext().broadcast(table.encryption());
@@ -260,7 +260,9 @@ public class IcebergSource implements DataSourceV2, ReadSupport, WriteSupport, D
   protected FileIO fileIO(Table table) {
     if (table.io() instanceof HadoopFileIO) {
       // we need to use Spark's SerializableConfiguration to avoid issues with Kryo serialization
-      SerializableConfiguration conf = new SerializableConfiguration(((HadoopFileIO) table.io()).conf());
+      // we also need to construct a new Hadoop conf to avoid concurrency issues
+      HadoopFileIO io = (HadoopFileIO) table.io();
+      SerializableConfiguration conf = new SerializableConfiguration(new Configuration(io.conf()));
       return new HadoopFileIO(conf::value);
     } else {
       return table.io();

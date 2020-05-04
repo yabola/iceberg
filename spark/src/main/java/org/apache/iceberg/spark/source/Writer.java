@@ -138,9 +138,19 @@ public class Writer implements DataSourceWriter {
 
   @Override
   public void commit(WriterCommitMessage[] messages) {
-    SnapshotUpdate<?> update = commitOp.prepareSnapshotUpdate(table, files(messages));
-    String desc = commitOp.description();
-    commitOperation(update, desc);
+    boolean withLocking = commitOp.withLocking();
+    try {
+      if (withLocking) {
+        LockManager.lock(table);
+      }
+      SnapshotUpdate<?> update = commitOp.prepareSnapshotUpdate(table, files(messages));
+      String desc = commitOp.description();
+      commitOperation(update, desc);
+    } finally {
+      if (withLocking) {
+        LockManager.unlock(table);
+      }
+    }
   }
 
   protected void commitOperation(SnapshotUpdate<?> operation, String description) {
