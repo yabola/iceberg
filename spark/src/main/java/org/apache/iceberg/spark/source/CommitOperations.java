@@ -39,6 +39,9 @@ public class CommitOperations {
   public interface CommitOperation<T> {
     SnapshotUpdate<T> prepareSnapshotUpdate(Table table, Iterable<DataFile> newFiles);
     String description();
+    default boolean withLocking() {
+      return false;
+    }
   }
 
   public static class Append implements CommitOperation<AppendFiles> {
@@ -173,13 +176,15 @@ public class CommitOperations {
 
   public static class Rewrite implements CommitOperation<RewriteFiles> {
     private final Iterable<DataFile> deletedFiles;
+    private final boolean withLocking;
 
-    private Rewrite(Iterable<DataFile> deletedFiles) {
+    private Rewrite(Iterable<DataFile> deletedFiles, boolean withLocking) {
       this.deletedFiles = deletedFiles;
+      this.withLocking = withLocking;
     }
 
-    public static Rewrite files(Iterable<DataFile> deletedFiles) {
-      return new Rewrite(deletedFiles);
+    public static Rewrite files(Iterable<DataFile> deletedFiles, boolean lock) {
+      return new Rewrite(deletedFiles, lock);
     }
 
     @Override
@@ -195,8 +200,13 @@ public class CommitOperations {
     }
 
     @Override
+    public boolean withLocking() {
+      return withLocking;
+    }
+
+    @Override
     public String description() {
-      return "rewrite files";
+      return String.format("rewrite files (with locking: %b)", withLocking);
     }
   }
 }
