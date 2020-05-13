@@ -19,9 +19,8 @@
 
 package org.apache.iceberg;
 
-import com.google.common.collect.Lists;
+import com.google.common.collect.Iterables;
 import java.io.IOException;
-import java.util.List;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.io.CloseableIterable;
 import org.junit.Assert;
@@ -55,18 +54,19 @@ public class TestNoResidualFileScanTask extends TableTestBase {
   public void testResidualIsIgnored() throws IOException {
     table.newAppend().appendFile(FILE).commit();
 
-    TableScan scan = table.newScan().filter(Expressions.lessThan("id", 10));
+    TableScan scan = table.newScan()
+        .option("complete-files", "true")
+        .filter(Expressions.lessThan("id", 10));
 
-    List<FileScanTask> noResidualTasks = Lists.newArrayList();
-    try (CloseableIterable<CombinedScanTask> combinedTasks = scan.planTasks()) {
-      combinedTasks.forEach(task -> {
-        task.files().forEach(file -> noResidualTasks.add(new NoResidualFileScanTask(file)));
-      });
+    try (CloseableIterable<CombinedScanTask> tasks = scan.planTasks()) {
+      Assert.assertTrue("Tasks should not be empty", Iterables.size(tasks) > 0);
+      for (CombinedScanTask combinedScanTask : tasks) {
+        for (FileScanTask fileScanTask : combinedScanTask.files()) {
+          Assert.assertEquals(
+              "Residual expression should be alwaysTrue",
+              fileScanTask.residual(), Expressions.alwaysTrue());
+        }
+      }
     }
-
-    Assert.assertFalse("Tasks should not be empty", noResidualTasks.isEmpty());
-    Assert.assertTrue(
-        "Residual expression should be alwaysTrue",
-        noResidualTasks.stream().allMatch(t -> t.residual() == Expressions.alwaysTrue()));
   }
 }

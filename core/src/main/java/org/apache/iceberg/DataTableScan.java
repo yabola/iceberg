@@ -86,6 +86,11 @@ public class DataTableScan extends BaseTableScan {
         .specsById(ops.current().specsById())
         .ignoreDeleted();
 
+    boolean completeFiles = Boolean.parseBoolean(options().getOrDefault("complete-files", "false"));
+    if (completeFiles) {
+      manifestGroup = manifestGroup.completeFiles();
+    }
+
     if (PLAN_SCANS_WITH_WORKER_POOL && snapshot.manifests().size() > 1) {
       manifestGroup = manifestGroup.planWith(ThreadPools.getWorkerPool());
     }
