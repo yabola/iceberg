@@ -56,6 +56,7 @@ class ManifestGroup {
   private boolean ignoreExisting;
   private List<String> columns;
   private boolean caseSensitive;
+  private boolean completeFiles;
   private ExecutorService executorService;
 
   ManifestGroup(FileIO io, Iterable<ManifestFile> manifests) {
@@ -68,6 +69,7 @@ class ManifestGroup {
     this.ignoreExisting = false;
     this.columns = ManifestReader.ALL_COLUMNS;
     this.caseSensitive = true;
+    this.completeFiles = false;
     this.manifestPredicate = m -> true;
     this.manifestEntryPredicate = e -> true;
   }
@@ -122,6 +124,11 @@ class ManifestGroup {
     return this;
   }
 
+  ManifestGroup completeFiles() {
+    this.completeFiles = true;
+    return this;
+  }
+
   ManifestGroup planWith(ExecutorService newExecutorService) {
     this.executorService = newExecutorService;
     return this;
@@ -136,7 +143,8 @@ class ManifestGroup {
   public CloseableIterable<FileScanTask> planFiles() {
     LoadingCache<Integer, ResidualEvaluator> residualCache = Caffeine.newBuilder().build(specId -> {
       PartitionSpec spec = specsById.get(specId);
-      return ResidualEvaluator.of(spec, dataFilter, caseSensitive);
+      Expression filter = completeFiles ? Expressions.alwaysTrue() : dataFilter;
+      return ResidualEvaluator.of(spec, filter, caseSensitive);
     });
     boolean dropStats = FilteredManifest.dropStats(dataFilter, columns);
     Iterable<CloseableIterable<FileScanTask>> tasks = entries((manifest, entries) -> {
