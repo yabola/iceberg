@@ -25,10 +25,25 @@ import org.apache.iceberg.TableTestBase;
 import org.apache.iceberg.types.Types;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import static org.apache.iceberg.types.Types.NestedField.required;
 
+@RunWith(Parameterized.class)
 public class TestMappingUpdates extends TableTestBase {
+  @Parameterized.Parameters
+  public static Object[][] parameters() {
+    return new Object[][] {
+        new Object[] { 1 },
+        new Object[] { 2 },
+    };
+  }
+
+  public TestMappingUpdates(int formatVersion) {
+    super(formatVersion);
+  }
+
   @Test
   public void testAddColumnMappingUpdate() {
     NameMapping mapping = MappingUtil.create(table.schema());
@@ -215,35 +230,5 @@ public class TestMappingUpdates extends TableTestBase {
                 MappedField.of(5, "y")
             ))),
         pointUpdated.asMappedFields());
-  }
-
-  @Test
-  public void testMappingUpdateFailureSkipsMappingUpdate() {
-    NameMapping mapping = MappingUtil.create(table.schema());
-    table.updateProperties()
-        .set(TableProperties.DEFAULT_NAME_MAPPING, NameMappingParser.toJson(mapping))
-        .commit();
-
-    table.updateSchema()
-        .renameColumn("id", "object_id")
-        .commit();
-
-    String updatedJson = table.properties().get(TableProperties.DEFAULT_NAME_MAPPING);
-    NameMapping updated = NameMappingParser.fromJson(updatedJson);
-
-    Assert.assertEquals(
-        MappedFields.of(
-            MappedField.of(1, ImmutableList.of("id", "object_id")),
-            MappedField.of(2, "data")),
-        updated.asMappedFields());
-
-    // rename data to id, which conflicts in the mapping above
-    // this update should succeed, even though the mapping update fails
-    table.updateSchema()
-        .renameColumn("data", "id")
-        .commit();
-
-    Assert.assertEquals("Mapping JSON should not change",
-        updatedJson, table.properties().get(TableProperties.DEFAULT_NAME_MAPPING));
   }
 }

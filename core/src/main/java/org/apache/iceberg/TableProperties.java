@@ -68,6 +68,9 @@ public class TableProperties {
   public static final String SPLIT_SIZE = "read.split.target-size";
   public static final long SPLIT_SIZE_DEFAULT = 134217728; // 128 MB
 
+  public static final String METADATA_SPLIT_SIZE = "read.split.metadata-target-size";
+  public static final long METADATA_SPLIT_SIZE_DEFAULT = 32 * 1024 * 1024; // 32 MB
+
   public static final String SPLIT_LOOKBACK = "read.split.planning-lookback";
   public static final int SPLIT_LOOKBACK_DEFAULT = 10;
 
@@ -112,7 +115,7 @@ public class TableProperties {
   public static final String WRITE_AUDIT_PUBLISH_ENABLED_DEFAULT = "false";
 
   public static final String WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes";
-  public static final long WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = Long.MAX_VALUE;
+  public static final long WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024; // 512 MB
 
   public static final String SNAPSHOT_ID_INHERITANCE_ENABLED = "compatibility.snapshot-id-inheritance.enabled";
   public static final boolean SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT = false;

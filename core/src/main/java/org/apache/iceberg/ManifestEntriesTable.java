@@ -19,13 +19,14 @@
 
 package org.apache.iceberg;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 import java.util.Collection;
-import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.ResidualEvaluator;
 import org.apache.iceberg.io.CloseableIterable;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.types.TypeUtil;
 
 /**
@@ -69,13 +70,7 @@ public class ManifestEntriesTable extends BaseMetadataTable {
     }
   }
 
-  @Override
-  public String location() {
-    return table.currentSnapshot().manifestListLocation();
-  }
-
   private static class EntriesTableScan extends BaseTableScan {
-    private static final long TARGET_SPLIT_SIZE = 32 * 1024 * 1024; // 32 MB
 
     EntriesTableScan(TableOperations ops, Table table, Schema schema) {
       super(ops, table, schema);
@@ -99,27 +94,47 @@ public class ManifestEntriesTable extends BaseMetadataTable {
 
     @Override
     protected long targetSplitSize(TableOperations ops) {
-      return TARGET_SPLIT_SIZE;
+      return ops.current().propertyAsLong(
+          TableProperties.METADATA_SPLIT_SIZE, TableProperties.METADATA_SPLIT_SIZE_DEFAULT);
     }
 
     @Override
     protected CloseableIterable<FileScanTask> planFiles(
         TableOperations ops, Snapshot snapshot, Expression rowFilter, boolean caseSensitive, boolean colStats) {
-      CloseableIterable<ManifestFile> manifests = Avro
-          .read(ops.io().newInputFile(snapshot.manifestListLocation()))
-          .rename("manifest_file", GenericManifestFile.class.getName())
-          .rename("partitions", GenericPartitionFieldSummary.class.getName())
-          // 508 is the id used for the partition field, and r508 is the record name created for it in Avro schemas
-          .rename("r508", GenericPartitionFieldSummary.class.getName())
-          .project(ManifestFile.schema())
-          .reuseContainers(false)
-          .build();
-
+      CloseableIterable<ManifestFile> manifests = CloseableIterable.withNoopClose(snapshot.manifests());
+      Schema fileSchema = new Schema(schema().findType("data_file").asStructType().fields());
       String schemaString = SchemaParser.toJson(schema());
       String specString = PartitionSpecParser.toJson(PartitionSpec.unpartitioned());
+      ResidualEvaluator residuals = ResidualEvaluator.unpartitioned(rowFilter);
 
-      return CloseableIterable.transform(manifests, manifest -> new BaseFileScanTask(
-          DataFiles.fromManifest(manifest), schemaString, specString, ResidualEvaluator.unpartitioned(rowFilter)));
+      return CloseableIterable.transform(manifests, manifest ->
+          new ManifestReadTask(ops.io(), manifest, fileSchema, schemaString, specString, residuals));
+    }
+  }
+
+  static class ManifestReadTask extends BaseFileScanTask implements DataTask {
+    private final Schema fileSchema;
+    private final FileIO io;
+    private final ManifestFile manifest;
+
+    ManifestReadTask(FileIO io, ManifestFile manifest, Schema fileSchema, String schemaString,
+                     String specString, ResidualEvaluator residuals) {
+      super(DataFiles.fromManifest(manifest), schemaString, specString, residuals);
+      this.fileSchema = fileSchema;
+      this.io = io;
+      this.manifest = manifest;
+    }
+
+    @Override
+    public CloseableIterable<StructLike> rows() {
+      return CloseableIterable.transform(
+          ManifestFiles.read(manifest, io).project(fileSchema).allEntries(),
+          file -> (GenericManifestEntry) file);
+    }
+
+    @Override
+    public Iterable<FileScanTask> split(long splitSize) {
+      return ImmutableList.of(this); // don't split
     }
   }
 }

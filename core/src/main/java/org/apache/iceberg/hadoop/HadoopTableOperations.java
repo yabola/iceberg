@@ -36,11 +36,13 @@ import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.encryption.EncryptionManager;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.LocationProvider;
+import org.apache.iceberg.util.Pair;
 import org.apache.iceberg.util.Tasks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,10 +57,11 @@ public class HadoopTableOperations implements TableOperations {
 
   private final Configuration conf;
   private final Path location;
-  private TableMetadata currentMetadata = null;
-  private Integer version = null;
-  private boolean shouldRefresh = true;
   private HadoopFileIO defaultFileIo = null;
+
+  private volatile TableMetadata currentMetadata = null;
+  private volatile Integer version = null;
+  private volatile boolean shouldRefresh = true;
 
   protected HadoopTableOperations(Path location, Configuration conf) {
     this.conf = conf;
@@ -71,6 +74,18 @@ public class HadoopTableOperations implements TableOperations {
       return refresh();
     }
     return currentMetadata;
+  }
+
+  private synchronized Pair<Integer, TableMetadata> versionAndMetadata() {
+    return Pair.of(version, currentMetadata);
+  }
+
+  private synchronized void updateVersionAndMetadata(int newVersion, String metadataFile) {
+    // update if the current version is out of date
+    if (version == null || version != newVersion) {
+      this.version = newVersion;
+      this.currentMetadata = checkUUID(currentMetadata, TableMetadataParser.read(io(), metadataFile));
+    }
   }
 
   @Override
@@ -92,19 +107,7 @@ public class HadoopTableOperations implements TableOperations {
         nextMetadataFile = getMetadataFile(ver + 1);
       }
 
-      // only load if the current version is out of date
-      if (version == null || version != ver) {
-        this.version = ver;
-
-        TableMetadata newMetadata = TableMetadataParser.read(io(), io().newInputFile(metadataFile.toString()));
-        String newUUID = newMetadata.uuid();
-        if (currentMetadata != null) {
-          Preconditions.checkState(newUUID == null || newUUID.equals(currentMetadata.uuid()),
-              "Table UUID does not match: current=%s != refreshed=%s", currentMetadata.uuid(), newUUID);
-        }
-
-        this.currentMetadata = newMetadata;
-      }
+      updateVersionAndMetadata(ver, metadataFile.toString());
 
       this.shouldRefresh = false;
       return currentMetadata;
@@ -114,8 +117,9 @@ public class HadoopTableOperations implements TableOperations {
   }
 
   @Override
-  public synchronized void commit(TableMetadata base, TableMetadata metadata) {
-    if (base != current()) {
+  public void commit(TableMetadata base, TableMetadata metadata) {
+    Pair<Integer, TableMetadata> current = versionAndMetadata();
+    if (base != current.second()) {
       throw new CommitFailedException("Cannot commit changes based on stale table metadata");
     }
 
@@ -137,7 +141,7 @@ public class HadoopTableOperations implements TableOperations {
     Path tempMetadataFile = metadataPath(UUID.randomUUID().toString() + fileExtension);
     TableMetadataParser.write(metadata, io().newOutputFile(tempMetadataFile.toString()));
 
-    int nextVersion = (version != null ? version : 0) + 1;
+    int nextVersion = (current.first() != null ? current.first() : 0) + 1;
     Path finalMetadataFile = metadataFilePath(nextVersion, codec);
     FileSystem fs = getFileSystem(tempMetadataFile, conf);
 
@@ -178,6 +182,51 @@ public class HadoopTableOperations implements TableOperations {
   @Override
   public String metadataFileLocation(String fileName) {
     return metadataPath(fileName).toString();
+  }
+
+  @Override
+  public TableOperations temp(TableMetadata uncommittedMetadata) {
+    return new TableOperations() {
+      @Override
+      public TableMetadata current() {
+        return uncommittedMetadata;
+      }
+
+      @Override
+      public TableMetadata refresh() {
+        throw new UnsupportedOperationException("Cannot call refresh on temporary table operations");
+      }
+
+      @Override
+      public void commit(TableMetadata base, TableMetadata metadata) {
+        throw new UnsupportedOperationException("Cannot call commit on temporary table operations");
+      }
+
+      @Override
+      public String metadataFileLocation(String fileName) {
+        return HadoopTableOperations.this.metadataFileLocation(fileName);
+      }
+
+      @Override
+      public LocationProvider locationProvider() {
+        return LocationProviders.locationsFor(uncommittedMetadata.location(), uncommittedMetadata.properties());
+      }
+
+      @Override
+      public FileIO io() {
+        return HadoopTableOperations.this.io();
+      }
+
+      @Override
+      public EncryptionManager encryption() {
+        return HadoopTableOperations.this.encryption();
+      }
+
+      @Override
+      public long newSnapshotId() {
+        return HadoopTableOperations.this.newSnapshotId();
+      }
+    };
   }
 
   private Path getMetadataFile(int metadataVersion) throws IOException {
@@ -223,7 +272,6 @@ public class HadoopTableOperations implements TableOperations {
 
     try (FSDataOutputStream out = fs.create(versionHintFile, true /* overwrite */)) {
       out.write(String.valueOf(versionToWrite).getBytes(StandardCharsets.UTF_8));
-
     } catch (IOException e) {
       LOG.warn("Failed to update version hint", e);
     }
@@ -237,7 +285,8 @@ public class HadoopTableOperations implements TableOperations {
         return 0;
       }
 
-      try (BufferedReader in = new BufferedReader(new InputStreamReader(fs.open(versionHintFile)))) {
+      try (InputStreamReader fsr = new InputStreamReader(fs.open(versionHintFile), StandardCharsets.UTF_8);
+           BufferedReader in = new BufferedReader(fsr)) {
         return Integer.parseInt(in.readLine().replace("\n", ""));
       }
 
@@ -320,5 +369,14 @@ public class HadoopTableOperations implements TableOperations {
               LOG.warn("Delete failed for previous metadata file: {}", previousMetadataFile, exc))
           .run(previousMetadataFile -> io().deleteFile(previousMetadataFile.file()));
     }
+  }
+
+  private static TableMetadata checkUUID(TableMetadata currentMetadata, TableMetadata newMetadata) {
+    String newUUID = newMetadata.uuid();
+    if (currentMetadata != null && currentMetadata.uuid() != null && newUUID != null) {
+      Preconditions.checkState(newUUID.equals(currentMetadata.uuid()),
+          "Table UUID does not match: current=%s != refreshed=%s", currentMetadata.uuid(), newUUID);
+    }
+    return newMetadata;
   }
 }

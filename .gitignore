@@ -11,6 +11,11 @@ gradle/
 out
 gradle/wrapper/gradle-wrapper.jar
 
+# rio build
+.out
+*/.out
+*/.dist
+
 # web site build
 site/site
 
@@ -35,3 +40,6 @@ spark/tmp/
 .project
 .settings
 bin/
+
+# Hive/metastore files
+metastore_db/

@@ -24,6 +24,7 @@ import com.google.common.collect.Sets;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.SnapshotUtil;
 
@@ -64,11 +65,6 @@ public class HistoryTable extends BaseMetadataTable {
   }
 
   @Override
-  public String location() {
-    return ops.current().file().location();
-  }
-
-  @Override
   public Schema schema() {
     return HISTORY_SCHEMA;
   }
@@ -80,6 +76,12 @@ public class HistoryTable extends BaseMetadataTable {
   private class HistoryScan extends StaticTableScan {
     HistoryScan() {
       super(ops, table, HISTORY_SCHEMA, HistoryTable.this::task);
+    }
+
+    @Override
+    public CloseableIterable<FileScanTask> planFiles() {
+      // override planFiles to avoid the check for a current snapshot because this metadata table is for all snapshots
+      return CloseableIterable.withNoopClose(HistoryTable.this.task(this));
     }
   }
 

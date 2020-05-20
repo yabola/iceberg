@@ -17,21 +17,27 @@
  * under the License.
  */
 
-subprojects {
-  apply plugin: 'maven' // make pom files for deployment
-  apply plugin: 'maven-publish'
-  apply plugin: 'signing'
-
-  task sourceJar(type: Jar, dependsOn: classes) {
-    classifier = 'sources'
-    from sourceSets.main.allSource
-    group 'build'
+buildscript {
+  repositories {
+    maven { url "https://artifacts.apple.com/plugins-snapshot" }
+    maven { url "https://artifacts.apple.com/plugins-release" }
   }
+  dependencies {
+    classpath "com.apple.cie.rio:gradle-build-plugin:3.0.0"
+  }
+}
 
-  task javadocJar(type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
-    from javadoc.destinationDir
-    group 'build'
+apply plugin: com.apple.cie.rio.group.RioGroupPlugin
+
+subprojects {
+  apply plugin: 'maven'
+  apply plugin: 'maven-publish'
+  apply plugin: com.apple.cie.rio.library.RioLibraryPlugin
+
+  rio {
+    library {
+      isPublic = true
+    }
   }
 
   task testJar(type: Jar) {
@@ -40,80 +46,6 @@ subprojects {
   }
 
   artifacts {
-    archives sourceJar
-    archives javadocJar
-    archives testJar
     testArtifacts testJar
-  }
-
-  // add LICENSE and NOTICE
-  [jar, sourceJar, javadocJar, testJar].each { task ->
-    task.from(rootDir) {
-      include 'LICENSE'
-      include 'NOTICE'
-    }
-  }
-
-  publishing {
-    publications {
-      apache(MavenPublication) {
-        from components.java
-
-        artifact sourceJar
-        artifact javadocJar
-        artifact testJar
-
-        versionMapping {
-          allVariants {
-            fromResolutionResult()
-          }
-        }
-
-        groupId = 'org.apache.iceberg'
-        pom {
-          name = 'Apache Iceberg (incubating)'
-          description = 'A table format for huge analytic datasets'
-          url = 'https://iceberg.apache.org'
-          licenses {
-            license {
-              name = 'The Apache Software License, Version 2.0'
-              url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-            }
-          }
-          mailingLists {
-            mailingList {
-              name = 'Dev Mailing List'
-              post = 'dev@iceberg.apache.org'
-              subscribe = 'dev-subscribe@iceberg.apache.org'
-              unsubscribe = 'dev-unsubscribe@iceberg.apache.org'
-            }
-          }
-          issueManagement {
-            system = 'GitHub'
-            url = 'https://github.com/apache/incubator-iceberg/issues'
-          }
-        }
-      }
-    }
-
-    repositories {
-      maven {
-        credentials {
-          username project.hasProperty('mavenUser') ? "$mavenUser" : ""
-          password project.hasProperty('mavenPassword') ? "$mavenPassword" : ""
-        }
-        // upload to the releases repository using ./gradlew -Prelease publish
-        def snapshotsRepoUrl = 'https://repository.apache.org/content/repositories/snapshots'
-        def releasesRepoUrl = 'https://repository.apache.org/service/local/staging/deploy/maven2'
-        url = project.hasProperty('release') ? releasesRepoUrl : snapshotsRepoUrl
-      }
-    }
-  }
-
-  if (project.hasProperty('release')) {
-    signing {
-      useGpgCmd()
-      sign publishing.publications.apache
-    }
   }
 }

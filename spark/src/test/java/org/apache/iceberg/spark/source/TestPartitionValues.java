@@ -41,6 +41,7 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
@@ -57,7 +58,8 @@ public class TestPartitionValues {
   public static Object[][] parameters() {
     return new Object[][] {
         new Object[] { "parquet" },
-        new Object[] { "avro" }
+        new Object[] { "avro" },
+        new Object[] { "orc" }
     };
   }
 
@@ -131,7 +133,6 @@ public class TestPartitionValues {
     Dataset<Row> df = spark.createDataFrame(expected, SimpleRecord.class);
 
     try {
-      // TODO: incoming columns must be ordered according to the table's schema
       df.select("id", "data").write()
           .format("iceberg")
           .mode("append")
@@ -145,6 +146,95 @@ public class TestPartitionValues {
           .orderBy("id")
           .as(Encoders.bean(SimpleRecord.class))
           .collectAsList();
+
+      Assert.assertEquals("Number of rows should match", expected.size(), actual.size());
+      Assert.assertEquals("Result rows should match", expected, actual);
+
+    } finally {
+      TestTables.clearTables();
+    }
+  }
+
+  @Test
+  public void testReorderedColumns() throws Exception {
+    String desc = "reorder_columns";
+    File parent = temp.newFolder(desc);
+    File location = new File(parent, "test");
+    File dataFolder = new File(location, "data");
+    Assert.assertTrue("mkdirs should succeed", dataFolder.mkdirs());
+
+    HadoopTables tables = new HadoopTables(spark.sessionState().newHadoopConf());
+    Table table = tables.create(SIMPLE_SCHEMA, SPEC, location.toString());
+    table.updateProperties().set(TableProperties.DEFAULT_FILE_FORMAT, format).commit();
+
+    List<SimpleRecord> expected = Lists.newArrayList(
+            new SimpleRecord(1, "a"),
+            new SimpleRecord(2, "b"),
+            new SimpleRecord(3, "c")
+    );
+
+    Dataset<Row> df = spark.createDataFrame(expected, SimpleRecord.class);
+
+    try {
+      df.select("data", "id").write()
+              .format("iceberg")
+              .mode("append")
+              .option("check-ordering", "false")
+              .save(location.toString());
+
+      Dataset<Row> result = spark.read()
+              .format("iceberg")
+              .load(location.toString());
+
+      List<SimpleRecord> actual = result
+              .orderBy("id")
+              .as(Encoders.bean(SimpleRecord.class))
+              .collectAsList();
+
+      Assert.assertEquals("Number of rows should match", expected.size(), actual.size());
+      Assert.assertEquals("Result rows should match", expected, actual);
+
+    } finally {
+      TestTables.clearTables();
+    }
+  }
+
+  @Test
+  public void testReorderedColumnsNoNullability() throws Exception {
+    String desc = "reorder_columns_no_nullability";
+    File parent = temp.newFolder(desc);
+    File location = new File(parent, "test");
+    File dataFolder = new File(location, "data");
+    Assert.assertTrue("mkdirs should succeed", dataFolder.mkdirs());
+
+    HadoopTables tables = new HadoopTables(spark.sessionState().newHadoopConf());
+    Table table = tables.create(SIMPLE_SCHEMA, SPEC, location.toString());
+    table.updateProperties().set(TableProperties.DEFAULT_FILE_FORMAT, format).commit();
+
+    List<SimpleRecord> expected = Lists.newArrayList(
+            new SimpleRecord(1, "a"),
+            new SimpleRecord(2, "b"),
+            new SimpleRecord(3, "c")
+    );
+
+    Dataset<Row> df = spark.createDataFrame(expected, SimpleRecord.class);
+
+    try {
+      df.select("data", "id").write()
+              .format("iceberg")
+              .mode("append")
+              .option("check-ordering", "false")
+              .option("check-nullability", "false")
+              .save(location.toString());
+
+      Dataset<Row> result = spark.read()
+              .format("iceberg")
+              .load(location.toString());
+
+      List<SimpleRecord> actual = result
+              .orderBy("id")
+              .as(Encoders.bean(SimpleRecord.class))
+              .collectAsList();
 
       Assert.assertEquals("Number of rows should match", expected.size(), actual.size());
       Assert.assertEquals("Result rows should match", expected, actual);
@@ -212,6 +302,74 @@ public class TestPartitionValues {
         for (int i = 0; i < expected.size(); i += 1) {
           TestHelpers.assertEqualsSafe(
               SUPPORTED_PRIMITIVES.asStruct(), expected.get(i), actual.get(i));
+        }
+      }
+    } finally {
+      TestTables.clearTables();
+    }
+  }
+
+  @Test
+  public void testNestedPartitionValues() throws Exception {
+    Assume.assumeTrue("ORC can't project nested partition values", !format.equalsIgnoreCase("orc"));
+
+    String[] columnNames = new String[] {
+        "b", "i", "l", "f", "d", "date", "ts", "s", "bytes", "dec_9_0", "dec_11_2", "dec_38_10"
+    };
+
+    HadoopTables tables = new HadoopTables(spark.sessionState().newHadoopConf());
+    Schema nestedSchema = new Schema(optional(1, "nested", SUPPORTED_PRIMITIVES.asStruct()));
+
+    // create a table around the source data
+    String sourceLocation = temp.newFolder("source_table").toString();
+    Table source = tables.create(nestedSchema, sourceLocation);
+
+    // write out an Avro data file with all of the data types for source data
+    List<GenericData.Record> expected = RandomData.generateList(source.schema(), 2, 128735L);
+    File avroData = temp.newFile("data.avro");
+    Assert.assertTrue(avroData.delete());
+    try (FileAppender<GenericData.Record> appender = Avro.write(Files.localOutput(avroData))
+        .schema(source.schema())
+        .build()) {
+      appender.addAll(expected);
+    }
+
+    // add the Avro data file to the source table
+    source.newAppend()
+        .appendFile(DataFiles.fromInputFile(Files.localInput(avroData), 10))
+        .commit();
+
+    Dataset<Row> sourceDF = spark.read().format("iceberg").load(sourceLocation);
+
+    try {
+      for (String column : columnNames) {
+        String desc = "partition_by_" + SUPPORTED_PRIMITIVES.findType(column).toString();
+
+        File parent = temp.newFolder(desc);
+        File location = new File(parent, "test");
+        File dataFolder = new File(location, "data");
+        Assert.assertTrue("mkdirs should succeed", dataFolder.mkdirs());
+
+        PartitionSpec spec = PartitionSpec.builderFor(nestedSchema).identity("nested." + column).build();
+
+        Table table = tables.create(nestedSchema, spec, location.toString());
+        table.updateProperties().set(TableProperties.DEFAULT_FILE_FORMAT, format).commit();
+
+        sourceDF.write()
+            .format("iceberg")
+            .mode("append")
+            .save(location.toString());
+
+        List<Row> actual = spark.read()
+            .format("iceberg")
+            .load(location.toString())
+            .collectAsList();
+
+        Assert.assertEquals("Number of rows should match", expected.size(), actual.size());
+
+        for (int i = 0; i < expected.size(); i += 1) {
+          TestHelpers.assertEqualsSafe(
+              nestedSchema.asStruct(), expected.get(i), actual.get(i));
         }
       }
     } finally {

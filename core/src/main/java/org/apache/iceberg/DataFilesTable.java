@@ -23,7 +23,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 import java.util.Collection;
-import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.ResidualEvaluator;
 import org.apache.iceberg.io.CloseableIterable;
@@ -68,13 +67,7 @@ public class DataFilesTable extends BaseMetadataTable {
     }
   }
 
-  @Override
-  public String location() {
-    return table.currentSnapshot().manifestListLocation();
-  }
-
   public static class FilesTableScan extends BaseTableScan {
-    private static final long TARGET_SPLIT_SIZE = 32 * 1024 * 1024; // 32 MB
     private final Schema fileSchema;
 
     FilesTableScan(TableOperations ops, Table table, Schema fileSchema) {
@@ -101,22 +94,14 @@ public class DataFilesTable extends BaseMetadataTable {
 
     @Override
     protected long targetSplitSize(TableOperations ops) {
-      return TARGET_SPLIT_SIZE;
+      return ops.current().propertyAsLong(
+          TableProperties.METADATA_SPLIT_SIZE, TableProperties.METADATA_SPLIT_SIZE_DEFAULT);
     }
 
     @Override
     protected CloseableIterable<FileScanTask> planFiles(
         TableOperations ops, Snapshot snapshot, Expression rowFilter, boolean caseSensitive, boolean colStats) {
-      CloseableIterable<ManifestFile> manifests = Avro
-          .read(ops.io().newInputFile(snapshot.manifestListLocation()))
-          .rename("manifest_file", GenericManifestFile.class.getName())
-          .rename("partitions", GenericPartitionFieldSummary.class.getName())
-          // 508 is the id used for the partition field, and r508 is the record name created for it in Avro schemas
-          .rename("r508", GenericPartitionFieldSummary.class.getName())
-          .project(ManifestFile.schema())
-          .reuseContainers(false)
-          .build();
-
+      CloseableIterable<ManifestFile> manifests = CloseableIterable.withNoopClose(snapshot.manifests());
       String schemaString = SchemaParser.toJson(schema());
       String specString = PartitionSpecParser.toJson(PartitionSpec.unpartitioned());
       ResidualEvaluator residuals = ResidualEvaluator.unpartitioned(rowFilter);
@@ -130,13 +115,13 @@ public class DataFilesTable extends BaseMetadataTable {
     }
   }
 
-  private static class ManifestReadTask extends BaseFileScanTask implements DataTask {
+  static class ManifestReadTask extends BaseFileScanTask implements DataTask {
     private final FileIO io;
     private final ManifestFile manifest;
     private final Schema schema;
 
-    private ManifestReadTask(FileIO io, ManifestFile manifest, Schema schema, String schemaString,
-                             String specString, ResidualEvaluator residuals) {
+    ManifestReadTask(FileIO io, ManifestFile manifest, Schema schema, String schemaString,
+                     String specString, ResidualEvaluator residuals) {
       super(DataFiles.fromManifest(manifest), schemaString, specString, residuals);
       this.io = io;
       this.manifest = manifest;
@@ -146,7 +131,7 @@ public class DataFilesTable extends BaseMetadataTable {
     @Override
     public CloseableIterable<StructLike> rows() {
       return CloseableIterable.transform(
-          ManifestReader.read(manifest, io).project(schema),
+          ManifestFiles.read(manifest, io).project(schema),
           file -> (GenericDataFile) file);
     }
 

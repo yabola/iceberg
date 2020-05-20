@@ -29,8 +29,22 @@ import org.apache.iceberg.ManifestEntry.Status;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class TestFastAppend extends TableTestBase {
+  @Parameterized.Parameters
+  public static Object[][] parameters() {
+    return new Object[][] {
+        new Object[] { 1 },
+        new Object[] { 2 },
+    };
+  }
+
+  public TestFastAppend(int formatVersion) {
+    super(formatVersion);
+  }
 
   @Test
   public void testEmptyTableAppend() {
@@ -217,6 +231,11 @@ public class TestFastAppend extends TableTestBase {
 
   @Test
   public void testAppendManifestCleanup() throws IOException {
+    // the test assumes the manifests are rewritten
+    table.updateProperties()
+        .set(TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED, "false")
+        .commit();
+
     // inject 5 failures
     TestTables.TestTableOperations ops = table.ops();
     ops.failCommits(5);

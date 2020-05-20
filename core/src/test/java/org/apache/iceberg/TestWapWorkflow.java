@@ -20,18 +20,94 @@
 package org.apache.iceberg;
 
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Streams;
 import org.apache.iceberg.exceptions.CherrypickAncestorCommitException;
 import org.apache.iceberg.exceptions.DuplicateWAPCommitException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class TestWapWorkflow extends TableTestBase {
+  @Parameterized.Parameters
+  public static Object[][] parameters() {
+    return new Object[][] {
+        new Object[] { 1 },
+        new Object[] { 2 },
+    };
+  }
+
+  public TestWapWorkflow(int formatVersion) {
+    super(formatVersion);
+  }
 
   @Before
   public void setupTableProperties() {
     table.updateProperties().set(TableProperties.WRITE_AUDIT_PUBLISH_ENABLED, "true").commit();
+  }
+
+  @Test
+  public void testCherryPickOverwrite() {
+    table.newAppend()
+        .appendFile(FILE_A)
+        .commit();
+
+    table.newOverwrite()
+        .deleteFile(FILE_A)
+        .addFile(FILE_B)
+        .stageOnly()
+        .commit();
+
+    // the overwrite should only be staged
+    validateTableFiles(table, FILE_A);
+
+    Snapshot overwrite = Streams.stream(table.snapshots())
+        .filter(snap -> DataOperations.OVERWRITE.equals(snap.operation()))
+        .findFirst()
+        .get();
+
+    // cherry-pick the overwrite; this works because it is a fast-forward commit
+    table.manageSnapshots().cherrypick(overwrite.snapshotId()).commit();
+
+    // the overwrite should only be staged
+    validateTableFiles(table, FILE_B);
+  }
+
+  @Test
+  public void testCherryPickOverwriteFailsIfCurrentHasChanged() {
+    table.newAppend()
+        .appendFile(FILE_A)
+        .commit();
+
+    table.newOverwrite()
+        .deleteFile(FILE_A)
+        .addFile(FILE_B)
+        .stageOnly()
+        .commit();
+
+    // add a commit after the overwrite that prevents it from being a fast-forward operation
+    table.newAppend()
+        .appendFile(FILE_C)
+        .commit();
+
+    // the overwrite should only be staged
+    validateTableFiles(table, FILE_A, FILE_C);
+
+    Snapshot overwrite = Streams.stream(table.snapshots())
+        .filter(snap -> DataOperations.OVERWRITE.equals(snap.operation()))
+        .findFirst()
+        .get();
+
+    // try to cherry-pick, which should fail because the overwrite's parent is no longer current
+    AssertHelpers.assertThrows("Should reject overwrite that is not a fast-forward commit",
+        ValidationException.class, "Cannot fast-forward to non-append snapshot",
+        () -> table.manageSnapshots().cherrypick(overwrite.snapshotId()).commit());
+
+    // the table state should not have changed
+    validateTableFiles(table, FILE_A, FILE_C);
   }
 
   @Test
@@ -87,7 +163,6 @@ public class TestWapWorkflow extends TableTestBase {
     table.newAppend()
         .appendFile(FILE_B)
         .commit();
-    base = readMetadata();
 
     // do setCurrentSnapshot
     table.manageSnapshots().setCurrentSnapshot(firstSnapshotId).commit();
@@ -216,8 +291,6 @@ public class TestWapWorkflow extends TableTestBase {
     table.newAppend()
         .appendFile(FILE_C)
         .commit();
-    base = readMetadata();
-    Snapshot thirdSnapshot = base.currentSnapshot();
 
     // rollback to before the second snapshot's time
     table.manageSnapshots().rollbackToTime(secondSnapshot.timestampMillis()).commit();
@@ -475,29 +548,18 @@ public class TestWapWorkflow extends TableTestBase {
         .stageOnly()
         .commit();
 
-    // // second WAP commit
-    // table.newAppend()
-    //     .appendFile(FILE_C)
-    //     .set(SnapshotSummary.STAGED_WAP_ID_PROP, "987654321")
-    //     .stageOnly()
-    //     .commit();
     base = readMetadata();
 
     // pick the snapshot that's staged but not committed
     Snapshot wap1Snapshot = base.snapshots().get(1);
-    // Snapshot wap2Snapshot = base.snapshots().get(2);
 
-    Assert.assertEquals("Should have three snapshots", 2, base.snapshots().size());
+    Assert.assertEquals("Should have two snapshots", 2, base.snapshots().size());
     Assert.assertEquals("Should have first wap id in summary", "123456789",
         wap1Snapshot.summary().get("wap.id"));
-    // Assert.assertEquals("Should have second wap id in summary", "987654321",
-    //     wap2Snapshot.summary().get(SnapshotSummary.STAGED_WAP_ID_PROP));
     Assert.assertEquals("Current snapshot should be first commit's snapshot",
         firstSnapshotId, base.currentSnapshot().snapshotId());
     Assert.assertEquals("Parent snapshot id should be same for first WAP snapshot",
         firstSnapshotId, wap1Snapshot.parentId().longValue());
-    // Assert.assertEquals("Parent snapshot id should be same for second WAP snapshot",
-    //     firstSnapshotId, wap2Snapshot.parentId().longValue());
     Assert.assertEquals("Snapshot log should indicate number of snapshots committed", 1,
         base.snapshotLog().size());
 
