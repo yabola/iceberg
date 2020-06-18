@@ -38,6 +38,9 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.TableIdentifier;
+import org.apache.spark.sql.catalyst.analysis.NoSuchDatabaseException;
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.catalyst.parser.ParseException;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -46,7 +49,6 @@ import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import scala.collection.Seq;
 
 public class TestSparkTableUtil extends HiveTableBaseTest {
   private static final Configuration CONF = HiveTableBaseTest.hiveConf;
@@ -120,8 +122,8 @@ public class TestSparkTableUtil extends HiveTableBaseTest {
   }
 
   @Test
-  public void testPartitionScan() {
-    Seq<SparkPartition> partitions = SparkTableUtil.getPartitions(spark, qualifiedTableName);
+  public void testPartitionScan() throws NoSuchDatabaseException, NoSuchTableException, ParseException {
+    List<SparkPartition> partitions = SparkTableUtil.getPartitions(spark, qualifiedTableName);
     Assert.assertEquals("There should be 3 partitions", 3, partitions.size());
 
     Dataset<Row> partitionDF = SparkTableUtil.partitionDF(spark, qualifiedTableName);
@@ -129,8 +131,8 @@ public class TestSparkTableUtil extends HiveTableBaseTest {
   }
 
   @Test
-  public void testPartitionScanByFilter() {
-    Seq<SparkPartition> partitions = SparkTableUtil.getPartitionsByFilter(spark, qualifiedTableName, "data = 'a'");
+  public void testPartitionScanByFilter() throws ParseException, NoSuchTableException, NoSuchDatabaseException {
+    List<SparkPartition> partitions = SparkTableUtil.getPartitionsByFilter(spark, qualifiedTableName, "data = 'a'");
     Assert.assertEquals("There should be 1 matching partition", 1, partitions.size());
 
     Dataset<Row> partitionDF = SparkTableUtil.partitionDFByFilter(spark, qualifiedTableName, "data = 'a'");

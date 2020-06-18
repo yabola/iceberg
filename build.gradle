@@ -316,8 +316,6 @@ project(':iceberg-arrow') {
 }
 
 project(':iceberg-spark') {
-  apply plugin: 'scala'
-
   dependencies {
     compile project(':iceberg-api')
     compile project(':iceberg-common')
