@@ -87,6 +87,21 @@ public abstract class BaseMetastoreCatalog implements Catalog {
   }
 
   @Override
+  public Table resetTable(TableIdentifier identifier, String metadataFileLocation) {
+    Preconditions.checkArgument(
+        identifier != null && isValidIdentifier(identifier), "Invalid identifier: %s", identifier);
+    Preconditions.checkArgument(
+        metadataFileLocation != null && !metadataFileLocation.isEmpty(),
+        "Cannot reset table with an empty metadata file location");
+    if (!tableExists(identifier)) {
+      throw new NoSuchTableException("Table doesn't exist: %s", identifier);
+    }
+    TableOperations ops = newTableOps(identifier);
+    ops.reset(metadataFileLocation);
+    return new BaseTable(ops, identifier.toString());
+  }
+
+  @Override
   public TableBuilder buildTable(TableIdentifier identifier, Schema schema) {
     return new BaseMetastoreCatalogTableBuilder(identifier, schema);
   }

@@ -348,6 +348,17 @@ public interface Catalog {
   }
 
   /**
+   * Reset the table with a meta file.
+   *
+   * @param identifier a table identifier
+   * @param metadataFileLocation the location of a metadata file
+   * @return a Table instance
+   */
+  default Table resetTable(TableIdentifier identifier, String metadataFileLocation) {
+    throw new UnsupportedOperationException("Reset tables is not supported");
+  }
+
+  /**
    * /** Instantiate a builder to either create a table or start a create/replace transaction.
    *
    * @param identifier a table identifier

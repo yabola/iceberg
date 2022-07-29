@@ -345,6 +345,30 @@ public class HiveTableOperations extends BaseMetastoreTableOperations {
         "Committed to table {} with the new metadata location {}", fullName, newMetadataLocation);
   }
 
+  @Override
+  public void reset(String metadataFileLocation) {
+    Optional<Long> lockId = Optional.empty();
+    ReentrantLock tableLevelMutex = commitLockCache.get(fullName, t -> new ReentrantLock(true));
+    tableLevelMutex.lock();
+    try {
+      lockId = Optional.of(acquireLock());
+      Table tbl = loadHmsTable();
+      validateTableIsIceberg(tbl, fullName);
+      tbl.getParameters().put(METADATA_LOCATION_PROP, metadataFileLocation);
+      persistTable(tbl, true);
+    } catch (TException | UnknownHostException e) {
+      throw new RuntimeException(
+          String.format("Metastore operation failed for %s.%s", database, tableName), e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Interrupted during reset", e);
+    } finally {
+      unlock(lockId);
+      tableLevelMutex.unlock();
+    }
+    LOG.info("Reset table {} with the new metadata location {}", fullName, metadataFileLocation);
+  }
+
   @VisibleForTesting
   void persistTable(Table hmsTable, boolean updateHiveTable)
       throws TException, InterruptedException {

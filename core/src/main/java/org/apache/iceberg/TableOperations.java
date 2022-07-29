@@ -66,6 +66,15 @@ public interface TableOperations {
   FileIO io();
 
   /**
+   * Reset the table with a meta file.
+   *
+   * @param metadataFileLocation the location of a metadata file
+   */
+  default void reset(String metadataFileLocation) {
+    throw new UnsupportedOperationException("Reset table operation is not supported.");
+  }
+
+  /**
    * Returns a {@link org.apache.iceberg.encryption.EncryptionManager} to encrypt and decrypt data
    * files.
    */
