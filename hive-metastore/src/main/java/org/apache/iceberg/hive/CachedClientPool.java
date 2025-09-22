@@ -27,6 +27,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
@@ -101,7 +102,11 @@ public class CachedClientPool implements ClientPool<IMetaStoreClient, TException
 
   @VisibleForTesting
   HiveClientPool clientPool() {
-    return clientPoolCache.get(key, k -> new HiveClientPool(clientPoolSize, conf));
+    return clientPool(Optional.empty());
+  }
+
+  HiveClientPool clientPool(Optional<ClassLoader> classLoader) {
+    return clientPoolCache.get(key, k -> new HiveClientPool(clientPoolSize, conf, classLoader));
   }
 
   private synchronized void init() {
@@ -130,7 +135,7 @@ public class CachedClientPool implements ClientPool<IMetaStoreClient, TException
     if (isolatedClassLoader != null) {
       return isolatedClassLoader.withClassLoader(
           cl -> {
-            return clientPool().run(action);
+            return clientPool(Optional.of(cl)).run(action);
           },
           RuntimeException.class);
     } else {
@@ -144,7 +149,7 @@ public class CachedClientPool implements ClientPool<IMetaStoreClient, TException
     if (isolatedClassLoader != null) {
       return isolatedClassLoader.withClassLoader(
           cl -> {
-            return clientPool().run(action);
+            return clientPool(Optional.of(cl)).run(action);
           },
           RuntimeException.class);
     } else {
