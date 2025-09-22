@@ -514,8 +514,7 @@ public class CatalogUtil {
   public static void configureClassLoader(
       Object maybeConfigurable, IsolatedClassLoader isolatedClassLoader) {
     if (!(maybeConfigurable instanceof IsolateClassloaderConfigurable)) {
-      LOG.info(
-          "Catalog {} can't support config classloader", maybeConfigurable.getClass().getName());
+      LOG.info(" {} can't support config classloader", maybeConfigurable.getClass().getName());
       return;
     }
     ((IsolateClassloaderConfigurable) maybeConfigurable)
