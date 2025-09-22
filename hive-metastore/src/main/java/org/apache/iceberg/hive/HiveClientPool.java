@@ -54,6 +54,7 @@ public class HiveClientPool extends ClientPoolImpl<IMetaStoreClient, TException>
     super(poolSize, TTransportException.class, false);
     this.hiveConf = new HiveConf(conf, HiveClientPool.class);
     this.hiveConf.addResource(conf);
+    this.hiveConf.setClassLoader(Thread.currentThread().getContextClassLoader());
   }
 
   @Override
