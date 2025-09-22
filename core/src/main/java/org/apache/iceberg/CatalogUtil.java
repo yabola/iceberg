@@ -518,7 +518,8 @@ public class CatalogUtil {
           "Catalog {} can't support config classloader", maybeConfigurable.getClass().getName());
       return;
     }
-    ((IsolateClassloaderConfigurable) maybeConfigurable).setIsolatedClassLoader(isolatedClassLoader);
+    ((IsolateClassloaderConfigurable) maybeConfigurable)
+        .setIsolatedClassLoader(isolatedClassLoader);
   }
 
   /**

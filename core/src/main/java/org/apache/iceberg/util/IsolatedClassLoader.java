@@ -111,7 +111,8 @@ public class IsolatedClassLoader implements Closeable {
   public static IsolatedClassLoader buildClassLoader(List<String> libAndResourcesPaths) {
     // Listing all the classPath under the package path and build the isolated class loader.
     List<URL> classPathContents = Lists.newArrayList();
-    List<String> libPaths = libAndResourcesPaths.stream()
+    List<String> libPaths =
+        libAndResourcesPaths.stream()
             .map(path -> path.endsWith("/*") ? path.substring(0, path.length() - 2) : path)
             .collect(Collectors.toList());
     for (String path : libPaths) {
@@ -257,21 +258,21 @@ public class IsolatedClassLoader implements Closeable {
     boolean isHadoopClass =
         name.startsWith("org.apache.hadoop.") && !name.startsWith("org.apache.hadoop.hive.");
     return isCommonClass(name)
-            || name.startsWith("org.apache.iceberg.")
-            || isHadoopClass
-            || sharedClasses.stream().anyMatch(name::startsWith);
+        || name.startsWith("org.apache.iceberg.")
+        || isHadoopClass
+        || sharedClasses.stream().anyMatch(name::startsWith);
   }
 
   private boolean isCommonClass(String name) {
     return name.startsWith("org.slf4j")
-            || name.startsWith("org.apache.log4j")
-            || name.startsWith("org.apache.commons.logging") // log4j1.x
-            || name.startsWith("org.apache.logging.log4j") // log4j2
-            || name.startsWith("com.github.benmanes.")
-            || name.startsWith("scala.")
-            || (name.startsWith("com.google") && !name.startsWith("com.google.cloud"))
-            || name.startsWith("java.")
-            || name.startsWith("javax.sql.");
+        || name.startsWith("org.apache.log4j")
+        || name.startsWith("org.apache.commons.logging") // log4j1.x
+        || name.startsWith("org.apache.logging.log4j") // log4j2
+        || name.startsWith("com.github.benmanes.")
+        || name.startsWith("scala.")
+        || (name.startsWith("com.google") && !name.startsWith("com.google.cloud"))
+        || name.startsWith("java.")
+        || name.startsWith("javax.sql.");
   }
 
   /**
