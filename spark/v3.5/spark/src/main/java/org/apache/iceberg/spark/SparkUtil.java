@@ -20,6 +20,7 @@ package org.apache.iceberg.spark;
 
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -49,10 +50,15 @@ import org.apache.spark.storage.BlockManager;
 import org.apache.spark.storage.BlockManagerId;
 import org.apache.spark.storage.BlockManagerMaster;
 import org.joda.time.DateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
 
 public class SparkUtil {
+
+  private static final Logger LOG = LoggerFactory.getLogger(SparkUtil.class);
+
   private static final String SPARK_CATALOG_CONF_PREFIX = "spark.sql.catalog";
   // Format string used as the prefix for Spark configuration keys to override Hadoop configuration
   // values for Iceberg tables from a given catalog. These keys can be specified as
@@ -143,6 +149,7 @@ public class SparkUtil {
     // Find keys for the catalog intended to be hadoop configurations
     final String hadoopConfCatalogPrefix = hadoopConfPrefixForCatalog(catalogName);
     final Configuration conf = spark.sessionState().newHadoopConf();
+    HashMap<String, String> setConf = new HashMap();
     spark
         .sqlContext()
         .conf()
@@ -153,8 +160,10 @@ public class SparkUtil {
               // to avoid converting back and forth between Scala / Java map types
               if (v != null && k != null && k.startsWith(hadoopConfCatalogPrefix)) {
                 conf.set(k.substring(hadoopConfCatalogPrefix.length()), v);
+                setConf.put(k.substring(hadoopConfCatalogPrefix.length()), v);
               }
             });
+    LOG.info("initTracker: catalog {} set iceberg hadoopConf {}", catalogName, setConf);
     return conf;
   }
 

@@ -159,4 +159,6 @@ public class CatalogProperties {
 
   public static final String ENCRYPTION_KMS_TYPE = "encryption.kms-type";
   public static final String ENCRYPTION_KMS_IMPL = "encryption.kms-impl";
+
+  public static final String HIVE_METASTORE_JARS = "hive.metastore.jars";
 }

@@ -40,6 +40,7 @@ import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.ClientPool;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
+import org.apache.iceberg.catalog.IsolateClassloaderConfigurable;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -55,12 +56,14 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.util.IsolatedClassLoader;
 import org.apache.iceberg.util.LocationUtil;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespaces, Configurable {
+public class HiveCatalog extends BaseMetastoreCatalog
+    implements SupportsNamespaces, Configurable, IsolateClassloaderConfigurable {
   public static final String LIST_ALL_TABLES = "list-all-tables";
   public static final String LIST_ALL_TABLES_DEFAULT = "false";
 
@@ -79,6 +82,7 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
   private ClientPool<IMetaStoreClient, TException> clients;
   private boolean listAllTables = false;
   private Map<String, String> catalogProperties;
+  private IsolatedClassLoader isolatedClassLoader;
 
   public HiveCatalog() {}
 
@@ -101,6 +105,15 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
           LocationUtil.stripTrailingSlash(properties.get(CatalogProperties.WAREHOUSE_LOCATION)));
     }
 
+    if (properties.containsKey(HiveCatalog.HIVE_CONF_CATALOG)) {
+      conf.set(HiveCatalog.HIVE_CONF_CATALOG, properties.get(HiveCatalog.HIVE_CONF_CATALOG));
+      LOG.info(
+          "initTracker: {} force set {} -> {}",
+          name,
+          HiveCatalog.HIVE_CONF_CATALOG,
+          properties.get(HiveCatalog.HIVE_CONF_CATALOG));
+    }
+
     this.listAllTables =
         Boolean.parseBoolean(properties.getOrDefault(LIST_ALL_TABLES, LIST_ALL_TABLES_DEFAULT));
 
@@ -110,7 +123,7 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
             ? new HadoopFileIO(conf)
             : CatalogUtil.loadFileIO(fileIOImpl, properties, conf);
 
-    this.clients = new CachedClientPool(conf, properties);
+    this.clients = new CachedClientPool(conf, properties, isolatedClassLoader);
   }
 
   @Override
@@ -644,5 +657,10 @@ public class HiveCatalog extends BaseMetastoreCatalog implements SupportsNamespa
   @VisibleForTesting
   ClientPool<IMetaStoreClient, TException> clientPool() {
     return clients;
+  }
+
+  @Override
+  public void setIsolatedClassLoader(IsolatedClassLoader isolatedClassLoader) {
+    this.isolatedClassLoader = isolatedClassLoader;
   }
 }

@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.hive;
 
+import java.util.Optional;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaHookLoader;
@@ -30,8 +31,12 @@ import org.apache.iceberg.common.DynMethods;
 import org.apache.iceberg.relocated.com.google.common.annotations.VisibleForTesting;
 import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransportException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HiveClientPool extends ClientPoolImpl<IMetaStoreClient, TException> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(HiveClientPool.class);
 
   private static final DynMethods.StaticMethod GET_CLIENT =
       DynMethods.builder("getProxy")
@@ -49,11 +54,23 @@ public class HiveClientPool extends ClientPoolImpl<IMetaStoreClient, TException>
 
   private final HiveConf hiveConf;
 
-  public HiveClientPool(int poolSize, Configuration conf) {
+  public HiveClientPool(int poolSize, Configuration conf, Optional<ClassLoader> classLoader) {
     // Do not allow retry by default as we rely on RetryingHiveClient
     super(poolSize, TTransportException.class, false);
     this.hiveConf = new HiveConf(conf, HiveClientPool.class);
     this.hiveConf.addResource(conf);
+    classLoader.ifPresent(this.hiveConf::setClassLoader);
+    LOG.info(
+        "init hive conf {}, {}",
+        conf.get(HiveConf.ConfVars.METASTOREURIS.varname, ""),
+        conf.get(HiveCatalog.HIVE_CONF_CATALOG, "default as hive"));
+    if (classLoader.isPresent()) {
+      LOG.info("init hive with classloader , GET_CLIENT: {} ", GET_CLIENT);
+    }
+  }
+
+  public HiveClientPool(int poolSize, Configuration conf) {
+    this(poolSize, conf, Optional.empty());
   }
 
   @Override
