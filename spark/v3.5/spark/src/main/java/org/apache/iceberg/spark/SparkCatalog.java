@@ -756,9 +756,19 @@ public class SparkCatalog extends BaseCatalog
     SparkSession sparkSession = SparkSession.active();
     this.tables =
         new HadoopTables(SparkUtil.hadoopConfCatalogOverrides(SparkSession.active(), name));
+
+    int cacheMaxEntriesNum = PropertyUtil.propertyAsInt(options, "cache.max-entries-num", 0);
+    boolean cacheForceRefresh =
+        PropertyUtil.propertyAsBoolean(options, "cache.force-refresh", false);
+
     this.icebergCatalog =
         cacheEnabled
-            ? CachingCatalog.wrap(catalog, cacheCaseSensitive, cacheExpirationIntervalMs)
+            ? CachingCatalog.wrap(
+                catalog,
+                cacheCaseSensitive,
+                cacheExpirationIntervalMs,
+                cacheMaxEntriesNum,
+                cacheForceRefresh)
             : catalog;
     if (catalog instanceof SupportsNamespaces) {
       this.asNamespaceCatalog = (SupportsNamespaces) catalog;

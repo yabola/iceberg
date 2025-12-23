@@ -283,4 +283,9 @@ public class BaseTable implements Table, HasTableOperations, Serializable {
   Object writeReplace() {
     return SerializableTable.copyOf(this);
   }
+
+  @Override
+  public boolean isMetadataChange() {
+    return ops.isMetadataChange();
+  }
 }

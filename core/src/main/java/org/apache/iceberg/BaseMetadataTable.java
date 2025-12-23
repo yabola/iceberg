@@ -215,4 +215,9 @@ public abstract class BaseMetadataTable extends BaseReadOnlyTable implements Ser
   final Object writeReplace() {
     return SerializableTable.copyOf(this);
   }
+
+  @Override
+  public boolean isMetadataChange() {
+    return table().isMetadataChange();
+  }
 }

@@ -60,6 +60,16 @@ public class CachingCatalog implements Catalog {
     return new CachingCatalog(catalog, caseSensitive, expirationIntervalMillis);
   }
 
+  public static Catalog wrap(
+      Catalog catalog,
+      boolean caseSensitive,
+      long expirationIntervalMillis,
+      int maxEntriesNum,
+      boolean forceRefresh) {
+    return new CachingCatalog(
+        catalog, caseSensitive, expirationIntervalMillis, maxEntriesNum, forceRefresh);
+  }
+
   private final Catalog catalog;
   private final boolean caseSensitive;
 
@@ -86,6 +96,20 @@ public class CachingCatalog implements Catalog {
     this.tableCache = createTableCache(ticker);
   }
 
+  protected int maxEntriesNum = -1;
+  protected boolean forceRefresh = false;
+
+  private CachingCatalog(
+      Catalog catalog,
+      boolean caseSensitive,
+      long expirationIntervalMillis,
+      int maxEntriesNum,
+      boolean forceRefresh) {
+    this(catalog, caseSensitive, expirationIntervalMillis, Ticker.systemTicker());
+    this.maxEntriesNum = maxEntriesNum;
+    this.forceRefresh = forceRefresh;
+  }
+
   /**
    * RemovalListener class for removing metadata tables when their associated data table is expired
    * via cache expiration.
@@ -105,6 +129,9 @@ public class CachingCatalog implements Catalog {
 
   private Cache<TableIdentifier, Table> createTableCache(Ticker ticker) {
     Caffeine<Object, Object> cacheBuilder = Caffeine.newBuilder().softValues();
+    if (maxEntriesNum > 0) {
+      cacheBuilder.maximumSize(maxEntriesNum);
+    }
 
     if (expirationIntervalMillis > 0) {
       return cacheBuilder
@@ -141,7 +168,15 @@ public class CachingCatalog implements Catalog {
     TableIdentifier canonicalized = canonicalizeIdentifier(ident);
     Table cached = tableCache.getIfPresent(canonicalized);
     if (cached != null) {
-      return cached;
+      if (forceRefresh && cached.isMetadataChange()) {
+        // skip cache
+        tableCache.invalidate(canonicalized);
+        LOG.info(
+            "[ICEBERG_CACHE] Caching metadata is changed, won't use cache: {}.", cached.name());
+      } else {
+        LOG.info("[ICEBERG_CACHE] Caching catalog reporter: {}", cached.name());
+        return cached;
+      }
     }
 
     if (MetadataTableUtils.hasMetadataTableName(canonicalized)) {
@@ -254,6 +289,7 @@ public class CachingCatalog implements Catalog {
     @Override
     public Table create() {
       AtomicBoolean created = new AtomicBoolean(false);
+      tableCache.invalidate(canonicalizeIdentifier(ident));
       Table table =
           tableCache.get(
               canonicalizeIdentifier(ident),
