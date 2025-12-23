@@ -128,8 +128,8 @@ subprojects {
             password project.hasProperty('mavenPassword') ? "$mavenPassword" : ""
           }
           // upload to the releases repository using ./gradlew -Prelease publish
-          def apacheSnapshotsRepoUrl = 'https://repository.apache.org/content/repositories/snapshots'
-          def apacheReleasesRepoUrl = 'https://repository.apache.org/service/local/staging/deploy/maven2'
+          def apacheSnapshotsRepoUrl = 'https://mirrors.tencent.com/repository/maven/tclake'
+          def apacheReleasesRepoUrl = 'https://mirrors.tencent.com/repository/maven/tclake-snapshot'
           def snapshotsRepoUrl = project.hasProperty('mavenSnapshotsRepo') ? "$mavenSnapshotsRepo" : "$apacheSnapshotsRepoUrl"
           def releasesRepoUrl = project.hasProperty('mavenReleasesRepo') ? "$mavenReleasesRepo" : "$apacheReleasesRepoUrl"
           url = project.hasProperty('release') ? releasesRepoUrl : snapshotsRepoUrl

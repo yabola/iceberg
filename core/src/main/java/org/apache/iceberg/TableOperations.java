@@ -127,4 +127,8 @@ public interface TableOperations {
   default boolean requireStrictCleanup() {
     return true;
   }
+
+  default boolean isMetadataChange() {
+    return true;
+  }
 }

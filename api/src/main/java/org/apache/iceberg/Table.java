@@ -373,4 +373,8 @@ public interface Table {
 
     return null;
   }
+
+  default boolean isMetadataChange() {
+    return true;
+  }
 }

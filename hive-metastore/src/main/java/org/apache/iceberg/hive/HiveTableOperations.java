@@ -379,4 +379,21 @@ public class HiveTableOperations extends BaseMetastoreTableOperations
       return new NoLock();
     }
   }
+
+  @Override
+  public boolean isMetadataChange() {
+    long start = System.currentTimeMillis();
+    try {
+      Table table = metaClients.run(client -> client.getTable(database, tableName));
+      String metadataLocation = table.getParameters().get(METADATA_LOCATION_PROP);
+      long cost = System.currentTimeMillis() - start;
+      if (cost > 100) {
+        LOG.info("check metadataChange from hive metastore cost too much time: {}ms", cost);
+      }
+      return !Objects.equals(currentMetadataLocation(), metadataLocation);
+    } catch (Exception e) {
+      LOG.warn("error when check metadata", e);
+    }
+    return false;
+  }
 }
