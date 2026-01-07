@@ -394,6 +394,6 @@ public class HiveTableOperations extends BaseMetastoreTableOperations
     } catch (Exception e) {
       LOG.warn("error when check metadata", e);
     }
-    return false;
+    return true;
   }
 }
