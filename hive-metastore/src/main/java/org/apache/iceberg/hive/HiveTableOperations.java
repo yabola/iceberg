@@ -391,7 +391,9 @@ public class HiveTableOperations extends BaseMetastoreTableOperations
         LOG.info("check metadataChange from hive metastore cost too much time: {}ms", cost);
       }
       return !Objects.equals(currentMetadataLocation(), metadataLocation);
-    } catch (Exception e) {
+    } catch (NoSuchObjectException e) {
+      // ignore
+    } catch (Throwable e) {
       LOG.warn("error when check metadata", e);
     }
     return true;
