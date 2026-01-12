@@ -97,7 +97,9 @@ public class CachingCatalog implements Catalog {
   }
 
   protected int maxEntriesNum = -1;
-  protected boolean forceRefresh = false;
+  // gravitino server 侧需要默认为 true ，参考
+  // org.apache.amoro.utils.MixedFormatCatalogUtil#buildCacheCatalog
+  protected boolean forceRefresh = true;
 
   private CachingCatalog(
       Catalog catalog,
