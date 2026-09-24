@@ -95,4 +95,12 @@ public class SparkReadOptions {
   public static final String TIMESTAMP_AS_OF = "timestampAsOf";
 
   public static final String AGGREGATE_PUSH_DOWN_ENABLED = "aggregate-push-down-enabled";
+
+  // DLC（腾讯云数据湖计算）相关选项，用于通过云 API 获取真实的 metadata_location
+  // DLC 表标识，支持两段式（database.table）和三段式（catalog.database.table）
+  // 两段式时 datasourceConnectionName 从 spark.dlc.defaultCatalog 读取
+  // 三段式时第一段作为 datasourceConnectionName
+  // secretId/secretKey 从 spark.hadoop.fs.cosn.userinfo.secretId/secretKey 读取
+  // region 从 spark.dlc.region 读取
+  public static final String DLC_TABLE = "dlc-table";
 }

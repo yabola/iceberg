@@ -91,6 +91,8 @@ project(":iceberg-spark:iceberg-spark-${sparkMajorVersion}_${scalaVersion}") {
 
     implementation libs.caffeine
 
+    // 腾讯云 DLC SDK，用于通过云 API 获取表的 metadata_location
+    implementation "com.tencentcloudapi:tencentcloud-sdk-java:3.1.1123"
     testImplementation(libs.hadoop2.minicluster) {
       exclude group: 'org.apache.avro', module: 'avro'
       // to make sure netty libs only come from project(':iceberg-arrow')
